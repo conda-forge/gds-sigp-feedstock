@@ -1,3 +1,26 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c6d4f30..d51b61c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -3,10 +3,16 @@ cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+ 
+ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+ 
+-set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-undefined")
+-
+ set(LIB_VERSION 1.0.2)
+ 
++if(UNIX AND NOT APPLE)
++    set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-undefined")
++else()
++    set(CMAKE_SHARED_LINKER_FLAGS "-Wl")
++endif()
++
++
++
+ project(gds-sigp VERSION ${LIB_VERSION})
+ 
+ add_subdirectory(src)
 diff --git a/src/Containers/fSeries/ASD.hh b/src/Containers/fSeries/ASD.hh
 index ae23b81..944aede 100644
 --- a/src/Containers/fSeries/ASD.hh
@@ -3467,4 +3490,3 @@ index f21a198..07763a3 100644
  
  #ifndef __CINT__
  #include "DVector.hh"
-
