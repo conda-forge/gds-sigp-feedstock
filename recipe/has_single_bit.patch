@@ -1,0 +1,51 @@
+diff --git a/src/SignalProcessing/Coherence/Coherence.cc b/src/SignalProcessing/Coherence/Coherence.cc
+index 0d862c5..5452e22 100644
+--- a/src/SignalProcessing/Coherence/Coherence.cc
++++ b/src/SignalProcessing/Coherence/Coherence.cc
+@@ -326,7 +326,7 @@ Coherence::resample( auto_pipe& decim, const TSeries& in, TSeries& hist )
+         {
+             int resample =
+                 int( 1.0 / double( in.getTStep( ) * mSampleRate ) + 0.5 );
+-            if ( resample < 2 || !std::__has_single_bit( resample ) )
++            if ( resample < 2 || !has_single_bit( resample ) )
+                 throw runtime_error( "Coherence: Invalid resample request" );
+             int N = 0;
+             while ( resample > 1 )
+diff --git a/src/SignalProcessing/DecimateBy2/DecimateBy2.hh b/src/SignalProcessing/DecimateBy2/DecimateBy2.hh
+index 66f40c5..09b1223 100644
+--- a/src/SignalProcessing/DecimateBy2/DecimateBy2.hh
++++ b/src/SignalProcessing/DecimateBy2/DecimateBy2.hh
+@@ -214,4 +214,6 @@ DecimateBy2::inUse( void ) const
+     return ( mStartTime != Time( 0 ) );
+ }
+ 
++#define has_single_bit(x) ((x) && !((x) & ((x)-1)))
++
+ #endif // DecimateBy2_HH
+diff --git a/src/SignalProcessing/WelchPSD/RayleighStat.cc b/src/SignalProcessing/WelchPSD/RayleighStat.cc
+index 76b52ee..9d0ca60 100644
+--- a/src/SignalProcessing/WelchPSD/RayleighStat.cc
++++ b/src/SignalProcessing/WelchPSD/RayleighStat.cc
+@@ -196,7 +196,7 @@ RayleighStat::resample( auto_pipe& decim, const TSeries& in, TSeries& hist )
+         {
+             int resample =
+                 int( 1.0 / double( in.getTStep( ) * mSampleRate ) + 0.5 );
+-            if ( resample < 2 || !std::__has_single_bit( resample ) )
++            if ( resample < 2 || !has_single_bit( resample ) )
+                 throw runtime_error( "RayleighStat: Invalid resample request" );
+             int N = 0;
+             while ( resample > 1 )
+diff --git a/src/SignalProcessing/WelchPSD/WelchPSD.cc b/src/SignalProcessing/WelchPSD/WelchPSD.cc
+index e2efb11..129983e 100644
+--- a/src/SignalProcessing/WelchPSD/WelchPSD.cc
++++ b/src/SignalProcessing/WelchPSD/WelchPSD.cc
+@@ -145,7 +145,7 @@ WelchPSD::resample( auto_pipe& decim, const TSeries& in, TSeries& hist )
+         {
+             int resample =
+                 int( 1.0 / double( in.getTStep( ) * mSampleRate ) + 0.5 );
+-            if ( resample < 2 || !std::__has_single_bit( resample ) )
++            if ( resample < 2 || !has_single_bit( resample ) )
+                 throw runtime_error( "WelchPSD: Invalid resample request" );
+             int N = 0;
+             while ( resample > 1 )
+
