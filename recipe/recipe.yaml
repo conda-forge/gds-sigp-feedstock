@@ -14,7 +14,8 @@ source:
   url: https://git.ligo.org/cds/software/gds-sigp/-/archive/${{ version }}/${{ version }}.tar.gz
   sha256: 67935ed82fc9b99acff9df2c0071ab3d69036d593e74b1cd4b471140941b5ad0
   patches:
-    has_single_bit.patch
+    - has_single_bit.patch
+    - rename_fseries.patch
 
 build:
   number: 1
