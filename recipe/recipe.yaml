@@ -1,0 +1,65 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/prefix-dev/recipe-format/main/schema.json
+
+schema_version: 1
+
+context:
+  name: "gds-sigp"
+  version: "1.0.3"
+
+package:
+  name: ${{ name }}
+  version: ${{ version }}
+
+source:
+  url: https://git.ligo.org/cds/software/gds-sigp/-/archive/${{ version }}/${{ version }}.tar.gz
+  sha256: 67935ed82fc9b99acff9df2c0071ab3d69036d593e74b1cd4b471140941b5ad0
+  patches:
+    - has_single_bit.patch
+    - rename_fseries.patch
+
+build:
+  skip: win
+  number: 1
+    #run_exports:
+    #  - {{ pin_subpackage('gds-sigp', max_pin='x.x') }}
+
+requirements:
+  build:
+   - ${{ compiler('c') }}
+   - ${{ compiler('cxx') }}
+   - ${{ stdlib("c") }}
+   - cmake
+   - if: not win
+     then:
+       - make
+       - pkg-config
+
+  host:
+   - fftw
+   - expat
+   - libexpat
+   - zlib
+
+tests:
+  - script:
+    - if: not win
+      then:
+         - test -f ${PREFIX}/lib/libgds-sigp${SHLIB_EXT}
+         - test -f ${PREFIX}/include/gds-sigp/gdssigproc.h
+      else:
+         - IF NOT EXIST %PREFIX%/lib/libgds-sigp%SHLIB_EXT% EXIT /B 1
+         - IF NOT EXIST %PREFIX%/include/gds-sigp/gdssigproc.h EXIT /B 1
+
+about:
+  homepage: https://git.ligo.org/cds/software/gds_sigp
+  repository: https://git.ligo.org/cds/software/gds_sigp.git
+  license: GPL-3.0-or-later
+  license_family: GPL
+  license_file:
+    - COPYING
+    - COPYING-GPL-3
+  summary: Library for advinced LIGO signal processing
+
+extra:
+  recipe-maintainers:
+    - evonreis

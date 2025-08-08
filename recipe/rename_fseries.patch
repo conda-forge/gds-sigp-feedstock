@@ -1,0 +1,3492 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index c6d4f30..d51b61c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -3,10 +3,16 @@ cmake_minimum_required(VERSION 3.18 FATAL_ERROR)
+ 
+ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+ 
+-set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-undefined")
+-
+ set(LIB_VERSION 1.0.2)
+ 
++if(UNIX AND NOT APPLE)
++    set(CMAKE_SHARED_LINKER_FLAGS "-Wl,--no-undefined")
++else()
++    set(CMAKE_SHARED_LINKER_FLAGS "-Wl")
++endif()
++
++
++
+ project(gds-sigp VERSION ${LIB_VERSION})
+ 
+ add_subdirectory(src)
+diff --git a/src/Containers/fSeries/ASD.hh b/src/Containers/fSeries/ASD.hh
+index ae23b81..944aede 100644
+--- a/src/Containers/fSeries/ASD.hh
++++ b/src/Containers/fSeries/ASD.hh
+@@ -2,7 +2,7 @@
+ #ifndef CONTAINER_ASD_HH
+ #define CONTAINER_ASD_HH
+ 
+-#include "fSeries.hh"
++#include "f_series.hh"
+ 
+ namespace containers
+ {
+diff --git a/src/Containers/fSeries/CMakeLists.txt b/src/Containers/fSeries/CMakeLists.txt
+index 0eef5b6..d4c081c 100644
+--- a/src/Containers/fSeries/CMakeLists.txt
++++ b/src/Containers/fSeries/CMakeLists.txt
+@@ -3,7 +3,7 @@ add_library(fSeries OBJECT
+     ASD.cc
+     CSD.cc
+     DFT.cc
+-    fSeries.cc
++    f_series.cc
+     PSD.cc
+ )
+ 
+@@ -29,7 +29,7 @@ install(FILES
+     ASD.hh
+     CSD.hh
+     DFT.hh
+-    fSeries.hh
++    f_series.hh
+     PSD.hh
+     DESTINATION include/gds-sigp
+ )
+diff --git a/src/Containers/fSeries/CSD.hh b/src/Containers/fSeries/CSD.hh
+index 562f9c2..85653bc 100644
+--- a/src/Containers/fSeries/CSD.hh
++++ b/src/Containers/fSeries/CSD.hh
+@@ -2,7 +2,7 @@
+ #ifndef CONTAINER_CSD_HH
+ #define CONTAINER_CSD_HH
+ 
+-#include "fSeries.hh"
++#include "f_series.hh"
+ 
+ namespace containers
+ {
+diff --git a/src/Containers/fSeries/DFT.hh b/src/Containers/fSeries/DFT.hh
+index f35f0a2..3a04954 100644
+--- a/src/Containers/fSeries/DFT.hh
++++ b/src/Containers/fSeries/DFT.hh
+@@ -2,7 +2,7 @@
+ #ifndef CONTAINER_DFT_HH
+ #define CONTAINER_DFT_HH
+ 
+-#include "fSeries.hh"
++#include "f_series.hh"
+ class TSeries;
+ 
+ namespace containers
+diff --git a/src/Containers/fSeries/PSD.hh b/src/Containers/fSeries/PSD.hh
+index bc189a7..a79679c 100644
+--- a/src/Containers/fSeries/PSD.hh
++++ b/src/Containers/fSeries/PSD.hh
+@@ -2,7 +2,7 @@
+ #ifndef CONTAINER_PSD_HH
+ #define CONTAINER_PSD_HH
+ 
+-#include "fSeries.hh"
++#include "f_series.hh"
+ 
+ namespace containers
+ {
+diff --git a/src/Containers/fSeries/fSeries.cc b/src/Containers/fSeries/fSeries.cc
+deleted file mode 100644
+index 8785cfe..0000000
+--- a/src/Containers/fSeries/fSeries.cc
++++ /dev/null
+@@ -1,835 +0,0 @@
+-/* -*- mode: c++; c-basic-offset: 4; -*- */
+-#include "fSeries.hh"
+-#include "DVecType.hh"
+-#include <stdexcept>
+-#include <iostream>
+-#include "lcl_array.hh"
+-#include "dv_function.hh"
+-
+-using namespace std;
+-using namespace containers;
+-
+-//======================================  Constructor
+-fSeries::fSeries( void )
+-    : mF0( 0 ), mDf( 0 ), mT0( 0 ), mDt( 0 ), mDelta( 0 ), mDSMode( kEmpty )
+-{
+-}
+-
+-//======================================  Copy constructor
+-fSeries::fSeries( const fSeries& x )
+-{
+-    *this = x;
+-}
+-
+-//======================================  Data constructor
+-fSeries::fSeries(
+-    freq_type f0, freq_type dF, const Time& t0, Interval dT, const DVector& dV )
+-    : mF0( f0 ), mDf( dF ), mT0( t0 ), mDt( dT ), mDelta( 0 ),
+-      mData( dV.clone( ) )
+-{
+-    setDSMode( );
+-}
+-
+-//======================================  Constructor
+-fSeries::fSeries(
+-    freq_type f0, freq_type dF, const Time& t0, Interval dT, DVector* dV )
+-    : mF0( f0 ), mDf( dF ), mT0( t0 ), mDt( dT ), mDelta( 0 ), mData( dV )
+-{
+-    setDSMode( );
+-}
+-
+-//======================================  Clone an fSeries
+-void
+-fSeries::appName( const string& txt )
+-{
+-    mName += txt;
+-}
+-
+-//======================================  Clone an fSeries
+-fSeries*
+-fSeries::clone( void ) const
+-{
+-    return new fSeries( *this );
+-}
+-
+-//======================================  Extend an fSeries
+-void
+-fSeries::extend( freq_type fmax )
+-{
+-    if ( mDf <= 0 || null( ) )
+-        throw runtime_error( "fSeries: Attempted to extend empty series" );
+-    if ( fmax >= mF0 )
+-    {
+-        size_type nNew = size_type( ( fmax - mF0 ) / mDf + 0.5 );
+-        if ( single_sided( ) )
+-            nNew++;
+-        size_type end = size( );
+-        if ( nNew > end )
+-            mData->replace_with_zeros( end, 0, nNew - end );
+-    }
+-    else if ( double_sided( ) )
+-    {
+-        size_type nNew = size_type( ( mF0 - fmax ) / mDf + 0.5 );
+-        if ( nNew )
+-        {
+-            mData->replace_with_zeros( 0, 0, nNew );
+-            mF0 -= double( nNew ) * mDf;
+-        }
+-    }
+-    mDelta = 0;
+-}
+-
+-//======================================  Extract a subseries.
+-fSeries
+-fSeries::extract( freq_type f0, freq_type dF ) const
+-{
+-    freq_type fmax = f0 + dF;
+-    if ( f0 < mF0 )
+-        f0 = mF0;
+-    size_type inx0 = getBin( f0 );
+-    size_type inx1 = getBin( fmax );
+-    if ( single_sided( ) )
+-        inx1++;
+-    if ( empty( ) || inx1 <= inx0 )
+-        return fSeries( f0, mDf, mT0, mDt );
+-    size_type len = inx1 - inx0;
+-    fSeries   r( getBinF( inx0 ), mDf, mT0, mDt, mData->Extract( inx0, len ) );
+-    r.setSampleTime( mDelta );
+-
+-    //----------------------------------  Force fNy point to be real.
+-    if ( single_sided( ) )
+-    {
+-        if ( mData->W_data( ) )
+-        {
+-            dynamic_cast< DVectW& >( *( r.mData ) )[ len - 1 ] =
+-                mData->getDouble( inx1 - 1 );
+-        }
+-        else if ( mData->C_data( ) )
+-        {
+-            dynamic_cast< DVectC& >( *( r.mData ) )[ len - 1 ] =
+-                mData->getFloat( inx1 - 1 );
+-        }
+-    }
+-    return r;
+-}
+-
+-//======================================  get FSType
+-fSeries::FSType
+-fSeries::getFSType( void ) const
+-{
+-    return kSeries;
+-}
+-
+-//======================================  Resample series
+-fSeries
+-fSeries::interpolate( freq_type fmin,
+-                      freq_type fmax,
+-                      freq_type df,
+-                      bool      l ) const
+-{
+-    if ( l )
+-        return interpolate( fmin, fmax, df, kLog );
+-    else
+-        return interpolate( fmin, fmax, df, kLinear );
+-}
+-
+-//======================================  Resample series
+-fSeries
+-fSeries::interpolate( freq_type fmin,
+-                      freq_type fmax,
+-                      freq_type df,
+-                      FSinterp  ityp ) const
+-{
+-
+-    //----------------------------------  Set the return series.
+-    fSeries r( fmin, df, mT0, mDt );
+-    if ( empty( ) || fmax < fmin )
+-        return r;
+-
+-    //----------------------------------  See if extract will work...
+-    size_type inc = size_type( df / mDf + 0.5 );
+-    if ( double( inc ) * mDf == df && mF0 == 0 )
+-    {
+-        size_type iMax = getBin( fmax ) + inc;
+-        if ( inc == 1 )
+-            r.mData.reset( mData->Extract( 0, iMax ) );
+-        else
+-            r.mData.reset( mData->Extract( 0, iMax / inc, inc ) );
+-        size_type iMin = r.getBin( fmin );
+-        if ( iMin )
+-            r.mData->sub( 0, *r.mData, 0, iMin );
+-        r.mDSMode = kFolded;
+-
+-        //----------------------------------  Do the full interpolation.
+-    }
+-    else
+-    {
+-        size_type nBin = size_type( ( fmax - fmin ) / df + 1e-4 ) + 1;
+-
+-        //------------------------------  Get the input series packing
+-        size_type nF = getNStep( );
+-        freq_type fHi = getHighFreq( );
+-
+-        //------------------------------  Interpolate (slowly but surely).
+-        if ( refDVect( ).C_data( ) )
+-        {
+-            DVecType< dComplex > dv( nBin );
+-            const fComplex*      p =
+-                dynamic_cast< const DVectC& >( *mData ).refTData( );
+-
+-            switch ( ityp )
+-            {
+-            case kLinear:
+-                for ( size_type i = 0; i < nBin; ++i )
+-                {
+-                    freq_type f = fmin + df * double( i );
+-                    if ( f < mF0 || f > fHi )
+-                    {
+-                        dv[ i ] = dComplex( 0 );
+-                    }
+-                    else
+-                    {
+-                        size_type inx = size_type( ( f - mF0 ) / mDf );
+-                        freq_type f0 = getBinF( inx );
+-                        if ( inx == nF )
+-                        {
+-                            inx--;
+-                            f0 -= mDf;
+-                        }
+-                        double a = ( f - f0 ) / mDf;
+-                        dv[ i ] = p[ inx ] * ( 1.0 - a ) + p[ inx + 1 ] * a;
+-                    }
+-                }
+-                break;
+-            case kLog:
+-                for ( size_type i = 0; i < nBin; ++i )
+-                {
+-                    freq_type f = fmin + df * double( i );
+-                    if ( f < mF0 || f > fHi )
+-                    {
+-                        dv[ i ] = dComplex( 0 );
+-                    }
+-                    else
+-                    {
+-                        size_type inx = size_type( ( f - mF0 ) / mDf );
+-                        freq_type f0 = getBinF( inx );
+-                        if ( inx == nF )
+-                        {
+-                            inx--;
+-                            f0 -= mDf;
+-                        }
+-                        double a = ( f - f0 ) / mDf;
+-                        dv[ i ] = exp( log( p[ inx ] ) * ( 1 - a ) +
+-                                       log( p[ inx + 1 ] ) * a );
+-                    }
+-                }
+-                break;
+-            default:
+-                throw runtime_error( "interpolation method not implemented" );
+-            }
+-            r.setData( fmin, df, dv );
+-        }
+-        else if ( refDVect( ).W_data( ) )
+-        {
+-            DVecType< dComplex > dv( nBin );
+-            const dComplex*      p =
+-                dynamic_cast< const DVectW& >( *mData ).refTData( );
+-            switch ( ityp )
+-            {
+-            case kLinear:
+-                for ( size_type i = 0; i < nBin; ++i )
+-                {
+-                    freq_type f = fmin + df * double( i );
+-                    if ( f < mF0 || f > fHi )
+-                    {
+-                        dv[ i ] = dComplex( 0 );
+-                    }
+-                    else
+-                    {
+-                        size_type inx = size_type( ( f - mF0 ) / mDf );
+-                        freq_type f0 = getBinF( inx );
+-                        if ( inx == nF )
+-                        {
+-                            inx--;
+-                            f0 -= mDf;
+-                        }
+-                        double a = ( f - f0 ) / mDf;
+-                        dv[ i ] = p[ inx ] * ( 1.0 - a ) + p[ inx + 1 ] * a;
+-                    }
+-                }
+-                break;
+-            case kLog:
+-                for ( size_type i = 0; i < nBin; ++i )
+-                {
+-                    freq_type f = fmin + df * double( i );
+-                    if ( f < mF0 || f > fHi )
+-                    {
+-                        dv[ i ] = dComplex( 0 );
+-                    }
+-                    else
+-                    {
+-                        size_type inx = size_type( ( f - mF0 ) / mDf );
+-                        freq_type f0 = getBinF( inx );
+-                        if ( inx == nF )
+-                        {
+-                            inx--;
+-                            f0 -= mDf;
+-                        }
+-                        double a = ( f - f0 ) / mDf;
+-                        dv[ i ] = exp( log( p[ inx ] ) * ( 1 - a ) +
+-                                       log( p[ inx + 1 ] ) * a );
+-                    }
+-                }
+-                break;
+-            default:
+-                throw runtime_error( "interpolation method not implemented" );
+-            }
+-            r.setData( fmin, df, dv );
+-        }
+-        else if ( refDVect( ).D_data( ) )
+-        {
+-            DVectD        dv( nBin );
+-            double*       dvp = dv.refTData( );
+-            const double* p =
+-                dynamic_cast< const DVectD& >( *mData ).refTData( );
+-            switch ( ityp )
+-            {
+-            case kLinear:
+-                for ( size_type i = 0; i < nBin; ++i )
+-                {
+-                    freq_type f = fmin + df * double( i );
+-                    if ( f < mF0 || f > fHi )
+-                    {
+-                        dvp[ i ] = 0.0;
+-                    }
+-                    else
+-                    {
+-                        size_type inx = size_type( ( f - mF0 ) / mDf );
+-                        freq_type f0 = getBinF( inx );
+-                        if ( inx == nF )
+-                        {
+-                            inx--;
+-                            f0 -= mDf;
+-                        }
+-                        double a = ( f - f0 ) / mDf;
+-                        dvp[ i ] = p[ inx ] * ( 1.0 - a ) + p[ inx + 1 ] * a;
+-                    }
+-                }
+-                break;
+-            case kLog:
+-                for ( size_type i = 0; i < nBin; ++i )
+-                {
+-                    freq_type f = fmin + df * double( i );
+-                    if ( f < mF0 || f > fHi )
+-                    {
+-                        dvp[ i ] = 0.0;
+-                    }
+-                    else
+-                    {
+-                        size_type inx = size_type( ( f - mF0 ) / mDf );
+-                        freq_type f0 = getBinF( inx );
+-                        if ( inx == nF )
+-                        {
+-                            inx--;
+-                            f0 -= mDf;
+-                        }
+-                        double a = ( f - f0 ) / mDf;
+-                        dvp[ i ] = exp( log( p[ inx ] ) * ( 1 - a ) +
+-                                        log( p[ inx + 1 ] ) * a );
+-                    }
+-                }
+-                break;
+-            default:
+-                throw runtime_error( "interpolation method not implemented" );
+-            }
+-            r.setData( fmin, df, dv );
+-        }
+-        else
+-        {
+-            DVectD              dv( nBin );
+-            lcl_array< double > p( nF );
+-            getData( nF, p.get( ) );
+-            switch ( ityp )
+-            {
+-            case kLinear:
+-                for ( size_type i = 0; i < nBin; ++i )
+-                {
+-                    freq_type f = fmin + df * double( i );
+-                    if ( f < mF0 || f > fHi )
+-                    {
+-                        dv[ i ] = 0.0;
+-                    }
+-                    else
+-                    {
+-                        size_type inx = size_type( ( f - mF0 ) / mDf );
+-                        freq_type f0 = getBinF( inx );
+-                        if ( inx == nF )
+-                        {
+-                            inx--;
+-                            f0 -= mDf;
+-                        }
+-                        double a = ( f - f0 ) / mDf;
+-                        dv[ i ] = p[ inx ] * ( 1.0 - a ) + p[ inx + 1 ] * a;
+-                    }
+-                }
+-                break;
+-            case kLog:
+-                for ( size_type i = 0; i < nBin; ++i )
+-                {
+-                    freq_type f = fmin + df * double( i );
+-                    if ( f < mF0 || f > fHi )
+-                    {
+-                        dv[ i ] = 0.0;
+-                    }
+-                    else
+-                    {
+-                        size_type inx = size_type( ( f - mF0 ) / mDf );
+-                        freq_type f0 = getBinF( inx );
+-                        if ( inx == nF )
+-                        {
+-                            inx--;
+-                            f0 -= mDf;
+-                        }
+-                        double a = ( f - f0 ) / mDf;
+-                        dv[ i ] = exp( log( p[ inx ] ) * ( 1 - a ) +
+-                                       log( p[ inx + 1 ] ) * a );
+-                    }
+-                }
+-                break;
+-            default:
+-                throw runtime_error( "interpolation method not implemented" );
+-            }
+-            r.setData( fmin, df, dv );
+-        }
+-    }
+-    r.setSampleTime( mDelta );
+-    return r;
+-}
+-
+-//======================================  Calculate complex argument
+-fSeries
+-fSeries::argument( void ) const
+-{
+-    //----------------------------------  Get DVectD with the argument vs. f
+-    DVectD dv( dv_argument( refDVect( ) ) );
+-
+-    //----------------------------------  Construct an fSeries.
+-    fSeries r( mF0, mDf, mT0, mDt, dv );
+-    r.setSampleTime( mDelta );
+-    if ( !mName.empty( ) )
+-    {
+-        r.mName = "argument(";
+-        r.mName += mName;
+-        r.mName += ")";
+-    }
+-    return r;
+-}
+-
+-//======================================  Calculate modulus-squared
+-fSeries
+-fSeries::modsq( void ) const
+-{
+-    if ( empty( ) )
+-        return fSeries( );
+-    DVectD  dv( dv_modsq( refDVect( ) ) );
+-    fSeries r( mF0, mDf, mT0, mDt, dv );
+-    r.setSampleTime( mDelta );
+-    if ( !mName.empty( ) )
+-    {
+-        r.mName = "modsq(";
+-        r.mName += mName;
+-        r.mName += ")";
+-    }
+-    return r;
+-}
+-
+-//======================================  Calculate modulus
+-fSeries
+-fSeries::modulus( void ) const
+-{
+-    DVectD    dv( dv_modsq( refDVect( ) ) );
+-    size_type N = size( );
+-    for ( size_type i = 0; i < N; ++i )
+-    {
+-        dv[ i ] = sqrt( dv[ i ] );
+-    }
+-
+-    fSeries r( mF0, mDf, mT0, mDt, dv );
+-    r.setSampleTime( mDelta );
+-    if ( !mName.empty( ) )
+-    {
+-        r.mName = "modulus(";
+-        r.mName += mName;
+-        r.mName += ")";
+-    }
+-    return r;
+-}
+-
+-//======================================  Print out the fSeries header
+-std::ostream&
+-fSeries::dump_header( std::ostream& out ) const
+-{
+-    if ( !this )
+-    {
+-        out << "fSeries::dump_header: Request is dereferened null pointer"
+-            << endl;
+-        return out;
+-    }
+-    out << "fSeries " << mName << ": Start time " << getStartTime( )
+-        << " End Time " << getEndTime( ) << endl;
+-    out << "Series type: ";
+-    switch ( getFSType( ) )
+-    {
+-    case kSeries:
+-        out << "fSeries";
+-        break;
+-    case kDFT:
+-        out << "DFT";
+-        break;
+-    case kPSD:
+-        out << "PSD";
+-        break;
+-    case kCSD:
+-        out << "CSD";
+-        break;
+-    case kASD:
+-        out << "ASD";
+-        break;
+-    }
+-    out << "  Storage type: ";
+-    switch ( mDSMode )
+-    {
+-    case kEmpty:
+-        out << "None" << endl;
+-        break;
+-    case kFolded:
+-        out << "Folded" << endl;
+-        break;
+-    case kFoldedOdd:
+-        out << "Folded (odd length)" << endl;
+-        break;
+-    case kFull:
+-        out << "Full" << endl;
+-        break;
+-    case kFullReal:
+-        out << "Full (real dft)" << endl;
+-        break;
+-    }
+-    out << "Low Frequency " << getLowFreq( ) << " High Frequency "
+-        << getHighFreq( ) << " No. frequency steps " << getNStep( ) << endl;
+-    out << "Time Series start: " << mT0 << " Interval: " << mDt
+-        << " Step: " << mDelta << endl;
+-    return out;
+-}
+-
+-//======================================  Print out the fSeries contents
+-std::ostream&
+-fSeries::Dump( std::ostream& out ) const
+-{
+-    dump_header( out );
+-    if ( !this || null( ) )
+-        return out;
+-    else
+-        return mData->Dump( out );
+-}
+-
+-//======================================  Erase all data from series
+-void
+-fSeries::clear( void )
+-{
+-    if ( !null( ) )
+-        mData->Clear( );
+-    mDSMode = kEmpty;
+-}
+-
+-//======================================  Remove negative frequencies
+-void
+-fSeries::fold( void )
+-{
+-    if ( empty( ) || single_sided( ) )
+-        return;
+-    size_type N = size( );
+-    size_type ibin0 = N / 2;
+-    mF0 = getBinF( ibin0 );
+-    unique_ptr< DVector > save( mData.release( ) );
+-    mData.reset( save->Extract( ibin0, N - ibin0 ) );
+-    if ( 2 * ibin0 == N )
+-    {
+-        unique_ptr< DVector > temp( save->Extract( 0, 1 ) );
+-        temp->Conjugate( );
+-        mData->Append( *temp );
+-        mDSMode = kFolded;
+-    }
+-    else
+-    {
+-        mDSMode = kFoldedOdd;
+-    }
+-}
+-
+-//======================================  Replace negative frequencies
+-void
+-fSeries::unfold( void )
+-{
+-    if ( empty( ) || double_sided( ) )
+-        return;
+-    size_type N = size( );
+-    long      nTot = ( mDSMode == kFoldedOdd ) ? 2 * N - 1 : 2 * ( N - 1 );
+-    //if (mDelta != Interval(0.0)) nTot = long(1.0 / (mDelta * mDf) + 0.5);
+-    //else                         nTot = 2 * (N - 1);
+-    unique_ptr< DVector > negs( mData->clone( ) );
+-    negs->reverse( );
+-    negs->Conjugate( );
+-    // note tricky code...
+-    // the zero bin is the Nth bin of the folded series.
+-    if ( ( nTot % 2 ) == 0 )
+-        negs->replace( N - 1, 1, *mData, 0, N - 1 );
+-    else
+-        negs->replace( N - 1, 1, *mData, 0, N );
+-    mData.swap( negs );
+-    mF0 -= mDf * ( N - 1 );
+-    mDSMode = kFullReal;
+-}
+-
+-//======================================  Set data from DVector
+-void
+-fSeries::setData( freq_type f0, freq_type df, const DVector& data )
+-{
+-    setData( f0, df, data.clone( ) );
+-}
+-
+-//======================================  setData
+-void
+-fSeries::setData( freq_type f0, freq_type df, DVector* data )
+-{
+-    mF0 = f0;
+-    mDf = df;
+-    if ( mData.get( ) != data )
+-        mData.reset( data );
+-    setDSMode( );
+-}
+-
+-//======================================  Set the data storage mode
+-void
+-fSeries::setDSMode( void )
+-{
+-    if ( mDf <= 0.0 )
+-        throw runtime_error( "fSeries: Invalid frequency step." );
+-    if ( !size( ) )
+-        mDSMode = kEmpty;
+-    else if ( mF0 < 0 )
+-        mDSMode = kFull;
+-    else
+-        mDSMode = kFolded;
+-}
+-
+-//======================================  Set the name string
+-void
+-fSeries::setName( const std::string& name )
+-{
+-    mName = name;
+-}
+-
+-//======================================  Set the source sample time
+-void
+-fSeries::setSampleTime( Interval dT )
+-{
+-    mDelta = dT;
+-}
+-
+-//======================================  Set the time span
+-void
+-fSeries::setTimeSpan( const Time& t0, Interval dT )
+-{
+-    mT0 = t0;
+-    mDt = dT;
+-}
+-
+-//======================================  Reserve space in the data vector
+-void
+-fSeries::reserve( size_type len )
+-{
+-    if ( !null( ) )
+-        refDVect( ).reserve( len );
+-}
+-
+-//======================================  Assignment operators.
+-fSeries&
+-fSeries::operator=( const fSeries& x )
+-{
+-    mName = x.mName;
+-    mF0 = x.mF0;
+-    mDf = x.mDf;
+-    mT0 = x.mT0;
+-    mDt = x.mDt;
+-    mDSMode = x.mDSMode;
+-    mDelta = x.mDelta;
+-    if ( !x.empty( ) )
+-        mData.reset( x.refDVect( ).clone( ) );
+-    else
+-        mData.reset( 0 );
+-    return *this;
+-}
+-
+-//======================================  Bias operator
+-fSeries&
+-fSeries::operator+=( double bias )
+-{
+-    if ( !empty( ) )
+-        refDVect( ) += bias;
+-    return *this;
+-}
+-
+-//======================================  Addition operator
+-fSeries&
+-fSeries::operator+=( const fSeries& rhs )
+-{
+-    if ( empty( ) || size( ) != rhs.size( ) || mDSMode != rhs.mDSMode )
+-    {
+-        cerr << "fSeries sizes: this=" << size( ) << " that=" << rhs.size( )
+-             << endl;
+-        throw runtime_error( "fSeries: Add an unequal length fSeries" );
+-    }
+-    refDVect( ) += rhs.refDVect( );
+-    return *this;
+-}
+-
+-//======================================  Subtract operator
+-fSeries&
+-fSeries::operator-=( const fSeries& rhs )
+-{
+-    if ( empty( ) || size( ) != rhs.size( ) || mDSMode != rhs.mDSMode )
+-        throw runtime_error( "fSeries: Subtract an unequal length fSeries" );
+-    refDVect( ) -= rhs.refDVect( );
+-    return *this;
+-}
+-
+-//======================================  Scale operator
+-fSeries&
+-fSeries::operator*=( double scale )
+-{
+-    if ( !empty( ) )
+-        refDVect( ) *= scale;
+-    return *this;
+-}
+-
+-//======================================  Scale operator
+-fSeries&
+-fSeries::operator*=( dComplex scale )
+-{
+-    if ( !empty( ) )
+-    {
+-        if ( complex( ) )
+-            refDVect( ).scale( 0, scale, size( ) );
+-        else
+-            refDVect( ) *= scale.real( );
+-    }
+-    return *this;
+-}
+-
+-//======================================  Multiply operator
+-fSeries&
+-fSeries::operator*=( const fSeries& fs )
+-{
+-    if ( empty( ) || size( ) != fs.size( ) || mDSMode != fs.mDSMode )
+-        throw runtime_error( "fSeries: Multiply by an unequal length fSeries" );
+-    refDVect( ) *= fs.refDVect( );
+-    return *this;
+-}
+-
+-//======================================  Divide operator
+-fSeries&
+-fSeries::operator/=( const fSeries& fs )
+-{
+-    if ( empty( ) || size( ) != fs.size( ) || mDSMode != fs.mDSMode )
+-        throw runtime_error( "fSeries: Divide by an unequal length series" );
+-    refDVect( ) /= fs.refDVect( );
+-    return *this;
+-}
+-
+-//======================================  Parenthesis operator.
+-dComplex
+-fSeries::operator( )( freq_type freq ) const
+-{
+-    if ( null( ) )
+-        throw runtime_error( "Dereferencing null fSeries" );
+-    return refDVect( ).getCplx( getBin( freq ) );
+-}
+-
+-//======================================  Set data template.
+-template < class T >
+-void
+-fSeries::setData( freq_type f0, freq_type df, size_type len, const T* data )
+-{
+-    mF0 = f0;
+-    mDf = df;
+-    mData.reset( new DVecType< T >( len, data ) );
+-    setDSMode( );
+-}
+-
+-//======================================  Template instanciation
+-#if !defined( __SUNPRO_CC )
+-template void fSeries::setData< float >( freq_type    f0,
+-                                         freq_type    df,
+-                                         size_type    len,
+-                                         const float* data );
+-
+-template void fSeries::setData< double >( freq_type     f0,
+-                                          freq_type     df,
+-                                          size_type     len,
+-                                          const double* data );
+-
+-template void fSeries::setData< fComplex >( freq_type       f0,
+-                                            freq_type       df,
+-                                            size_type       len,
+-                                            const fComplex* data );
+-
+-template void fSeries::setData< dComplex >( freq_type       f0,
+-                                            freq_type       df,
+-                                            size_type       len,
+-                                            const dComplex* data );
+-#endif
+-
+-//======================================  Type template Constructor
+-template < class T >
+-fSeries::fSeries( freq_type   f0,
+-                  freq_type   dF,
+-                  const Time& t0,
+-                  Interval    dT,
+-                  size_type   NData,
+-                  const T*    Data )
+-    : mF0( f0 ), mDf( dF ), mT0( t0 ), mDt( dT ), mDelta( 0 )
+-{
+-    if ( NData )
+-        mData.reset( new DVecType< T >( NData, Data ) );
+-    setDSMode( );
+-}
+-
+-#if !defined( __SUNPRO_CC )
+-template fSeries::fSeries( freq_type    f0,
+-                           freq_type    dF,
+-                           const Time&  t0,
+-                           Interval     dT,
+-                           size_type    len,
+-                           const float* data );
+-
+-template fSeries::fSeries( freq_type     f0,
+-                           freq_type     dF,
+-                           const Time&   t0,
+-                           Interval      dT,
+-                           size_type     len,
+-                           const double* data );
+-
+-template fSeries::fSeries( freq_type       f0,
+-                           freq_type       dF,
+-                           const Time&     t0,
+-                           Interval        dT,
+-                           size_type       len,
+-                           const fComplex* data );
+-
+-template fSeries::fSeries( freq_type       f0,
+-                           freq_type       dF,
+-                           const Time&     t0,
+-                           Interval        dT,
+-                           size_type       len,
+-                           const dComplex* data );
+-#endif
+diff --git a/src/Containers/fSeries/fSeries.hh b/src/Containers/fSeries/fSeries.hh
+deleted file mode 100644
+index c4e3f28..0000000
+--- a/src/Containers/fSeries/fSeries.hh
++++ /dev/null
+@@ -1,844 +0,0 @@
+-/* -*- mode: c++; c-basic-offset: 4; -*- */
+-#ifndef FSERIES_BASE_HH
+-#define FSERIES_BASE_HH
+-
+-#include <string>
+-#include <iosfwd>
+-#include <memory>
+-#include "gds_memory.hh"
+-#include "Complex.hh"
+-#include "DVector.hh"
+-#include "Time.hh"
+-#include "Interval.hh"
+-
+-class DVector;
+-
+-/**  The containers namespace includes a set of second generation signal 
+-  *  processing containers. These start with the %fSeries-based frequency
+-  *  series containers, including:
+-  *  - fSeries   Generic fixed-spacing frequency series base class.
+-  *  - ASD       Amplitude spectral density
+-  *  - CSD       Cross-spectral density
+-  *  - DFT       Discrete fourier transform
+-  *  - PSD       Power spectral density
+-  *  @brief Second generation container classes.
+-  *  @author J. Zweizig
+-  */
+-namespace containers
+-{
+-
+-    /**  The %fSeries class is used to represent a series in the frequency
+-  *  domain with constant frequency spacing (\f$\Delta f\f$) and arbitrary 
+-  *  length. The %fSeries may represent a Discrete Fourier transform (DFT) of 
+-  *  a signal, a Power Spectral density (PSD) a cross spectral density (CSD)
+-  *  or anything else. The %fSeries may be either single-sided or double-sided
+-  *  (see the following table for parameters).
+-  *  <table>
+-  *  <tr><td> Type </td>
+-  *      <td> Frequency Range </td>
+-  *      <td> Number of bins</td></tr>
+-  *  <tr><td> single-sided </td>
+-  *      <td> \f$ 0 <= f <= f_{Ny} \f$</td>
+-  *      <td> \f$ f_{Ny}/\Delta f + 1 \f$ </td></tr>
+-  *  <tr><td> double-sided </td>
+-  *      <td> \f$ -f_{Ny} <= f < f_{Ny} \f$ </td>
+-  *      <td> \f$ 2 f_{Ny} / \Delta f \f$ </td></tr>
+-  *  </table>
+-  *  Version history:
+-  *  - v1.0: Original version
+-  *  - v1.1: Add delta, implement dump(), fix use of null() / empty(), fix 
+-  *          getNStep() for double sided series.
+-  *  @brief  Frequency series class.
+-  *  @author J. Zweizig
+-  *  @version 1.1; Modified April 7, 2008
+-  */
+-    class fSeries
+-    {
+-    public:
+-        ///  Data type used to represent vector lengths.
+-        typedef unsigned long size_type;
+-
+-        ///  Data type used to represent frequency values.
+-        typedef double freq_type;
+-
+-        /**  Enumerate data storage modes. Single sided series are stored linearly
+-      *  from \f$ f_0 - f_{Ny} \f$ in increasing bins. Double sided series are 
+-      *  stored with \f$ F_{min} -> F_0 -> F_{max} - \Delta f \f$ in bins 
+-      *  \f$ 0 -> N-1 \f$.
+-      *  @brief Data Storage mode.
+-      */
+-        enum DSMode
+-        {
+-            kEmpty, ///< Series is empty
+-            kFull, ///< All Series elements are stored (no folding)
+-            kFullReal, ///< Fulll series from a real tseries (C[f] = C[-f]*)
+-            kFolded, ///< Folded dft of real data from even size series.
+-            kFoldedOdd ///< Folded dft of real data from odd size series.
+-        };
+-
+-        /**  Enumerate series type.
+-      *  @brief Data Series type
+-      */
+-        enum FSType
+-        {
+-            kSeries, ///< Generic %fSeries
+-            kDFT, ///< Discrete fourier transform of time-series data (DFT).
+-            kPSD, ///< Power spectral density data (PSD).
+-            kCSD, ///< Cross spectral density data (CSD).
+-            kASD ///< Amplitude spectral density data (ASD).
+-        };
+-
+-        /**  Interpolation method selection.
+-      *  @brief Interpolation type
+-      */
+-        enum FSinterp
+-        {
+-            kLinear, ///< Linear interpolation.
+-            kLog, ///< Logatithmic interpolation
+-            kSpline ///< Cubic spline interpolation (not implemented yet)
+-        };
+-
+-        /**  Construct an empty %fSeries.
+-      *  @brief Default constructor.
+-      */
+-        fSeries( void );
+-
+-        /**  Construct an %fSeries and initialize it from another %fSeries.
+-      *  @brief Copy constructor.
+-      *  @param fs %fSeries to be copied.
+-      */
+-        fSeries( const fSeries& fs );
+-
+-        /**  Move syntax constructor.
+-      *  @brief Move constructor.
+-      *  @param fs %fSeries to be moved.
+-      */
+-        fSeries( fSeries&& fs ) = default;
+-
+-        /**  Construct an %fSeries with a specified frequency offset, frequency
+-      *  bin and float input data.
+-      *  @brief Data constructor.
+-      *  @param f0    Lowest frequency to be contained by the %fSeries (in Hz)
+-      *  @param dF    Frequency step between adjacent elements (in Hz) 
+-      *  @param t0    Start time of the data represented by the %fSeries
+-      *  @param dT    Time interval of the data represented by the %fSeries.
+-      *  @param Ndata Number of data words.
+-      *  @param Data  Float data to be loaded into the %fSeries.
+-      */
+-        template < class T >
+-        fSeries( freq_type   f0,
+-                 freq_type   dF,
+-                 const Time& t0,
+-                 Interval    dT,
+-                 size_type   Ndata,
+-                 const T*    Data );
+-
+-        /**  Construct an %fSeries with a specified frequency offset, frequency
+-      *  bin, start time, interval and data vector.
+-      *  @brief Data constructor.
+-      *  @param f0   Lowest frequency to be contained by the %fSeries (in Hz)
+-      *  @param dF   Frequency step between adjacent elements (in Hz) 
+-      *  @param t0   Start time of the data represented by the %fSeries
+-      *  @param dT   Time interval of the data represented by the %fSeries.
+-      *  @param dV   Float data to be loaded into the %fSeries.
+-      */
+-        fSeries( freq_type      f0,
+-                 freq_type      dF,
+-                 const Time&    t0,
+-                 Interval       dT,
+-                 const DVector& dV );
+-
+-        /**  Construct an %fSeries with a specified frequency offset, frequency
+-      *  bin, start time, interval and an optional data vector. Ownership of 
+-      *  the data vector is assumed by the %fSeries.
+-      *  @brief Data constructor.
+-      *  @param f0   Lowest frequency to be contained by the %fSeries (in Hz)
+-      *  @param dF   Frequency step between adjacent elements (in Hz) 
+-      *  @param t0   Start time of the data represented by the %fSeries
+-      *  @param dT   Time interval of the data represented by the %fSeries.
+-      *  @param dV   Data to be used by the %fSeries.
+-      */
+-        fSeries( freq_type   f0,
+-                 freq_type   dF,
+-                 const Time& t0,
+-                 Interval    dT,
+-                 DVector*    dV = 0 );
+-
+-        /**  Destroy a series object.
+-      *  @brief %fSeries Destructor.
+-      */
+-        virtual ~fSeries( void )
+-        {
+-        }
+-
+-        /**  Calculate the complex argument of each (complex) element in a series.
+-      *  The results are returned as a double %fSeries. If the original series
+-      *  is real a series is returned with an equal length and zero contents.
+-      *  @brief Complex argument series.
+-      *  @return %fSeries with complex argument values.
+-      */
+-        fSeries argument( void ) const;
+-
+-        /**  Make an identical copy of the specified object. In general the 
+-      *  object will share the copy on write data vector (CWVec) with its
+-      *  clone until the object or its clone attempts to mondify the data.
+-      *  @brief Clone a frequency series object.
+-      *  @return Pointer to the %fSeries clone.
+-      */
+-        virtual fSeries* clone( void ) const;
+-
+-        /**  Test for complex data
+-      *  @brief Test complex
+-      *  @return True if complex
+-      */
+-        virtual bool complex( void ) const;
+-
+-        /**  Pad the %fSeries with zeroes to the specified maximum frequency. 
+-      *  If the new frequency is less than the current minimum frequency of
+-      *  a double sided frequency series, the appriopriate number of zero
+-      *  words are inserted at the beginnning of the series and the low 
+-      *  frequency is adjusted accordingly. 
+-      *  @brief   Extend the %fSeries.
+-      *  @param  fmax New maximum frequency (in Hz)
+-      */
+-        void extend( freq_type fmax );
+-
+-        /**  Returns an %fSeries containing a subset of the parent %fSeries. If the 
+-      *  requested low frequency (\a f0) is below the lowest frequency in the 
+-      *  series, the extracted series starts with the low frequency of the
+-      *  original series. The upper frequency (\em fhi ) is calculated 
+-      *  from \f$ fhi = f0 + dF \f$ rounded down to the nearest integer 
+-      *  frequency increment. If the starting series is single-sided, the 
+-      *  upper frequency point is included in the extracted series. The high
+-      *  frequency point in a single-sided series is treated as a Nyquist 
+-      *  frequency coefficient in that it is forced to have a zero imaginary 
+-      *  part.
+-      *  @brief Get a substring of the %fSeries.
+-      *  @param f0 Lowest frequency to be extracted from the %fSeries (in Hz)
+-      *  @param dF Frequency interval to be extracted (in Hz) 
+-      *  @return The specified sub-series
+-      */
+-        fSeries extract( freq_type f0, freq_type dF ) const;
+-
+-        /**  Optionally convert and copy the first 'len' entries of a series to 
+-      *  a float array. If the %fSeries is complex, only the real part of the
+-      *  data are returned.
+-      *  @brief Get float series data.
+-      *  @param len  Maximum number of entries to be copied.
+-      *  @param data Float buffer into which the data will be copied.
+-      *  @return The number of entries copied
+-      */
+-        template < class T >
+-        size_type getData( size_type len, T* data ) const;
+-
+-        /**  Returns the double-sided mode enumerator indicating the series format,
+-      *  \e i.e. double-sided, single-sided, single from odd lrngth series or 
+-      *  empty.
+-      *  @brief Get the mode enumerator.
+-      *  @return The mode enumerator indicating single/double sidedness.
+-      */
+-        DSMode getDSMode( void ) const;
+-
+-        /**  Returns the time interval as specified in the source data.
+-      *  @brief Get the time interval.
+-      *  @return The time interval of the data summarized by this series.
+-      */
+-        Interval getDt( void ) const;
+-
+-        /**  Returns the end time as specified in the source data.
+-      *  @brief Get the end time.
+-      *  @return The end time of the data summarized by this series.
+-      */
+-        Time getEndTime( void ) const;
+-
+-        /**  Returns the minimum frequency covered by the data.
+-      *  @brief Get the minimum frequency.
+-      *  @return Lowest frequency represented in the %fSeries in Hz.
+-      */
+-        freq_type getLowFreq( void ) const;
+-
+-        /**  Returns the maximum (Nyquist) frequency of the data.
+-      *  @brief Get the maximum Frequency.
+-      *  @return Highest frequency represented in the %fSeries in Hz.
+-      */
+-        freq_type getHighFreq( void ) const;
+-
+-        /**  Returns the Frequency interval between two adjacent points of the 
+-      *  %fSeries (\f$ \Delta f \f$).
+-      *  @brief Get the frequency step.
+-      *  @return The frequency interval in Hz.
+-      */
+-        freq_type getFStep( void ) const;
+-
+-        /**  Returns the FSType enumerated series type of this instance.
+-      *  @brief Frequency series type.
+-      *  @return FSType numerated series type.
+-      */
+-        virtual FSType getFSType( void ) const;
+-
+-        /**  Returns a pointer to the frequency series name.
+-      *  @brief Get the series name.
+-      *  @return A constant pointer to the series name.
+-      */
+-        const char* getName( void ) const;
+-
+-        /**  Returns the number of frequency steps. Note that the number of
+-      *  data points is in fact one greater than the number of steps
+-      *  because both the f=0 and f=Nyquist entries are included.
+-      *  @brief Get the number of frequency steps.
+-      *  @return the number of frequency steps.
+-      */
+-        size_type getNStep( void ) const;
+-
+-        /**  Get the original sample time (i.e. the inverse of the sample rate),
+-      *  of the time series this %fSeries was derived from. The sample time
+-      *  is set to zero if it is undefined or ambiguous.
+-      *  @brief Get the sample time.
+-      *  @return Sample time or zero.
+-      */
+-        Interval getSampleTime( void ) const;
+-
+-        /**  Returns the start time as specified in the source data.
+-      *  @brief Get the start time.
+-      *  @return The start time of the data summarized by this series.
+-      */
+-        Time getStartTime( void ) const;
+-
+-        /**  Interpolate the current %fSeries in the specified frequency range
+-      *  (\c fMin\ -\ fMax ) at points separated by the specified frequency 
+-      *  spacing (\a df ). The returned %fSeries is a single sided 
+-      *  series starting at \c f=0 with the specified spacing and points 
+-      *  up to (but not including) fMax. It is non-zero only in the specified 
+-      *  range. No interpolation is performed if the requested frequency step 
+-      *  is not an integer multiple of the current step. If interpolation is 
+-      *  necessary, it is performed according to the method specified by the 
+-      *  \a intype parameter.
+-      *  @brief Interpolate the %fSeries points
+-      *  @return Interpolated frequency series.
+-      *  @param fMin   Minimum non-zero frequency of returned series
+-      *  @param fMax   Maximum frequency of returned series
+-      *  @param df     Frequency step of returned series.
+-      *  @param intype Interpolation method enumerator.
+-      */
+-        fSeries interpolate( freq_type fMin,
+-                             freq_type fMax,
+-                             freq_type df,
+-                             FSinterp  intype = kLinear ) const;
+-
+-        /**  Interpolate the current %fSeries in the specified frequency range
+-      *  (<tt> fMin - fMax</tt>) at points separated by the specified frequency 
+-      *  spacing (<tt>df</tt>). The returned %fSeries is a single sided 
+-      *  series starting at <tt>f=0</tt> with the specified spacing and points 
+-      *  up to (but not including) fMax. It is non-zero only in the specified 
+-      *  range. No interpolation is performed if the requested frequency step 
+-      *  is not an integer multiple of the current step. If interpolation is 
+-      *  necessary, it may be performed either linearly or logarithmically as 
+-      *  specified by the <tt>logar</tt> parameter.
+-      *  @brief Interpolate the %fSeries points
+-      *  @return Interpolated frequency series.
+-      *  @param fMin  Minimum non-zero frequency of returned series
+-      *  @param fMax  Maximum frequency of returned series
+-      *  @param df    Frequency step of returned series.
+-      *  @param logar If true, logarithmic interpolation.
+-      */
+-        fSeries interpolate( freq_type fMin,
+-                             freq_type fMax,
+-                             freq_type df,
+-                             bool      logar ) const;
+-
+-        /**  Calculate the modulus squared of each element in a series. The 
+-      *  result is returned as a double %fSeries.
+-      *  @brief Modulus squared sereies.
+-      *  @return %fSeries with modulus squared values.
+-      */
+-        fSeries modsq( void ) const;
+-
+-        /**  Calculate the modulus squared of each element in a series. The 
+-      *  result is returned as a double %fSeries.
+-      *  @brief Modulus squared series.
+-      *  @return %fSeries with modulus squared values.
+-      */
+-        fSeries modulus( void ) const;
+-
+-        /**  Get a constant data vector reference.
+-      *  @brief DVector reference.
+-      *  @return A constant reference to the series data vector.
+-      */
+-        const DVector& refDVect( void ) const;
+-
+-        /**  Get the data vector reference.
+-      *  @brief DVector reference.
+-      *  @return A reference to the series data vector.
+-      */
+-        DVector& refDVect( void );
+-
+-        /**  Get a constant reference to the name string.
+-      *  @brief Name string reference.
+-      *  @return Constant reference to the name string.
+-      */
+-        const std::string& refName( void ) const;
+-
+-        /**  Get the number of data words. This is generally 
+-      *	 \f$ (f_{High} - f_{Low}) / \Delta f + 1 \f$ for single-sided
+-      *  series and  \f$ (f_{High} - f_{Low}) / \Delta f \f$ for 
+-      *  double-sided series.
+-      *  @return The current number of data words.
+-      */
+-        size_type size( void ) const;
+-
+-        /**  A formatted dump of the %fSeries header information is written to 
+-      *  the output stream.
+-      *  @brief Dump the %fSeries header to an output stream.
+-      *  @param out I/O stream to which the formatted dump is to be written.
+-      *  @return The I/O stream passed to the function.
+-      */
+-        std::ostream& dump_header( std::ostream& out ) const;
+-
+-        /**  A formatted dump of the %fSeries header and data are written to the
+-      *  output stream.
+-      *  @brief Dump the contents of the %fSeries to an output stream.
+-      *  @param out I/O stream to which the formatted dump is to be written.
+-      *  @return The I/O stream passed to the function.
+-      */
+-        std::ostream& Dump( std::ostream& out ) const;
+-
+-        /**  Test if the Fourier coefficients are stored in (full) double-sided
+-      *  format. Note that this method returns false for an empty series.
+-      *  @brief Test for double-sided storage.
+-      *  @return true if double-sided.
+-      */
+-        bool double_sided( void ) const;
+-
+-        /**  Test if the %fSeries is empty.
+-      *  @brief Test for an empty series.
+-      *  @return true if empty.
+-      */
+-        bool empty( void ) const;
+-
+-        /**  Test if the Fourier coefficients are stored in (folded) single-sided
+-      *  format. Note that this method returns false for an empty series. 
+-      *  @brief Test for single-sided storage.
+-      *  @return true if single-sided.
+-      */
+-        bool single_sided( void ) const;
+-
+-        /**  Test if the %fSeries DVector is unassigned.
+-      *  @brief Test for null series.
+-      *  @return true if null.
+-      */
+-        bool null( void ) const;
+-
+-        //------------------------------  Mutators
+-        /**  The specified string is appended to the existing series name.
+-      *  @brief Append a string to the series name.
+-      *  @param name String to be appended to the series name.
+-      */
+-        void appName( const std::string& name );
+-
+-        /**  Delete the data vector.
+-      *  @brief Clear the data vector.
+-      */
+-        void clear( void );
+-
+-        /**  If the starting %fSeries is double-sided, the +fNy bin is set to
+-      *  the conjugate of the -fNy bin and all negative frequency bins are 
+-      *  deleted. The DSType field is set to kFolded (i.e. single-sided).
+-      *  Should it check whether <tt>fSeries(f) == conj(fSeries(-f)</tt>)?
+-      *  What should be done if <tt>fMin != -fMax</tt>?
+-      *  @brief Fold the %fSeries
+-      */
+-        virtual void fold( void );
+-
+-        /**  If the starting %fSeries is single-sided, the -dF -> -fNy bins are
+-      *  set to the conjugate of the dF -> fNy bins. The DSType field is set 
+-      *  to kFull (i.e. double-sided).
+-      *  @brief Unfold the %fSeries
+-      */
+-        virtual void unfold( void );
+-
+-        /**  The Complex data in \a data are optionally converted to the data 
+-      *  vector type and then used to overwrite the series data.
+-      *  @brief Overwrite the series with specified data.
+-      *  @param f0 Frequency of the first bin
+-      *  @param df Frequency bin increment.
+-      *  @param len  Number of data words to be written to the %fSeries.
+-      *  @param data A Data array to be written to the %fSeries.
+-      */
+-        template < class T >
+-        void
+-        setData( freq_type f0, freq_type df, size_type len, const T* data );
+-
+-        /**  The current data vector is replaced by a clone of the DVector 
+-      *  \a data.
+-      *  @brief Overwrite the series with the specified data vector.
+-      *  @param f0 Frequency of the first bin
+-      *  @param df Frequency bin increment.
+-      *  @param data A DVector to be copied into the %fSeries.
+-      */
+-        void setData( freq_type f0, freq_type df, const DVector& data );
+-
+-        /**  The current data are cleared and the DVector \ data is taken over 
+-      *  by the %fSeries.
+-      *  @brief Overwrite the series with the specified data vector.
+-      *  @param f0 Frequency of the first bin
+-      *  @param df Frequency bin increment.
+-      *  @param data A DVector to be adopted by the %fSeries.
+-      */
+-        void setData( freq_type f0, freq_type df, DVector* data );
+-
+-        /**  Set the data storage mode based on the presence of the data vector
+-      *  and the sign of f0.
+-      *  \brief Set the data storage mode.
+-      */
+-        void setDSMode( void );
+-
+-        /**  The series name is set to the 'name' string.
+-      *  @brief Set the series name.
+-      *  @param name Series name.
+-      */
+-        void setName( const std::string& name );
+-
+-        /**  Set the original sample time (\e i.e. the inverse of the sample rate),
+-      *  of the time series this %fSeries was derived from. The sample time
+-      *  is set to zero if it is undefined or ambiguous.
+-      *  @brief Set the sample time.
+-      *  @param dT Sample time.
+-      */
+-        void setSampleTime( Interval dT );
+-
+-        /**  The series time span is set.
+-      *  @brief Set the time span.
+-      *  @param t0 Start time of the data from which the %fSeries is derived.
+-      *  @param dT Interval over which the data were derived or valid.
+-      */
+-        void setTimeSpan( const Time& t0, Interval dT );
+-
+-        /**  The data vector length is increased to accomodate at least the 
+-      *  specified number of entries. If sufficient storage has already
+-      *  been allocated, no action is taken. The vector data length 
+-      *  remains unchanged.
+-      *  @brief Increase the data vector storage.
+-      *  @param len Minimum length requested.
+-      *  @return Desired minimum storage length in words.
+-      */
+-        void reserve( size_type len );
+-
+-        /**  The frequency information, Time information and data of the lhs 
+-      *  series are replaced by those of the rhs series. The data are 
+-      *  converted to the the type of the lhs series if necessary.
+-      *  @brief Assignment operator.
+-      *  @param rhs The series to be copied.
+-      *  @return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator=( const fSeries& rhs );
+-
+-        /**  Delete the move syntax assignment operator to enforce the type 
+-      *  conversion.
+-      *  @brief Move syntax assignment operator.
+-      *  @param rhs The series to be moved.
+-      *  @return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator=( fSeries&& rhs ) = default;
+-
+-        /**  The rhs constant is added to the lhs series on a element by element
+-      *  basis. The result replaces the original contents of the lhs series.
+-      *  @brief Bias an %fSeries.
+-      *  @param bias The constant to be added.
+-      *  @return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator+=( double bias );
+-
+-        /**  The rhs series is added to the lhs series on a element by element 
+-      *  basis. The result replaces the original contents of the lhs series.
+-      *  @brief Add two %fSeries.
+-      *  @param rhs The series to be added.
+-      *  @return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator+=( const fSeries& rhs );
+-
+-        /**  The rhs series is subtracted from the lhs series on a element by 
+-      *  element basis.  The result replaces the original contents of the 
+-      *  lhs series.
+-      *  @brief Subtract a series.
+-      *  @param rhs The series to be subtracted.
+-      *  @return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator-=( const fSeries& rhs );
+-
+-        /**  Each element of the lhs series is multiplied by a scale factor.
+-      *  @brief Scale a series.
+-      *  @param scale The scale factor.
+-      *  @return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator*=( double scale );
+-
+-        /**  Each element of the series is multiplied by a complex scale factor.
+-      *  Real series data are not converted to complex, so if the series data 
+-      *  are real, the real part of the scale factor will be used.
+-      *  \brief Scale a series.
+-      *  \param scale Complex scale factor.
+-      *  \return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator*=( dComplex scale );
+-
+-        /**  Each element of the lhs series is multiplied by the corresponding
+-      *  element of the argument series.
+-      *  @brief Multiply a series by another.
+-      *  @param fs The multiplier series.
+-      *  @return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator*=( const fSeries& fs );
+-
+-        /**  Each element of the lhs series is divided by the corresponding
+-      *  element of the argument series.
+-      *  @brief Divide a series by another.
+-      *  @param fs The divisor series.
+-      *  @return a reference to the updated lhs %fSeries.
+-      */
+-        fSeries& operator/=( const fSeries& fs );
+-
+-        /**  The complex amplitude at the closest bin is returned.
+-      *  @brief Get the amplitude at a specified frequency.
+-      *  @param freq Frequency in Hz at which the series is to be evaluated.
+-      *  @return Complex value of the series at the specified frequency.
+-      */
+-        dComplex operator( )( freq_type freq ) const;
+-
+-        /**  Calculate the bin number closest to a given frequency. The returned
+-      *  bin number is always less than or equal to the number of steps. In 
+-      *  a double sided series this may point after the last valid bin. If  
+-      *  the frequency is less than mF0 (including negative frequencies in a
+-      *  single sided series) bin 0 is returned.
+-      *  @brief Get a bin number.
+-      *  @param f Frequency for which the bin number is to be calculated.
+-      *  @return Bin number.
+-      */
+-        size_type getBin( freq_type f ) const;
+-
+-        /**  Calculate the frequency of a given bin. No check is made on the
+-      *  bin number validity.
+-      *  @brief Get the bin frequency.
+-      *  @param bin Bin number.
+-      *  @return Bin frequency.
+-      */
+-        freq_type getBinF( size_type bin ) const;
+-
+-    private:
+-        /**  Frequency series name string.
+-      *  @brief Data Name
+-      */
+-        std::string mName;
+-
+-        /**  Not zero if the series source was heterodyned.
+-      *  @brief Minimum frequency.
+-      */
+-        freq_type mF0;
+-
+-        /**  Frequency bin size
+-      */
+-        freq_type mDf;
+-
+-        /**  GPS time of the first sample in the series. If the series represents
+-      *  a physical quantity integrated over a time bin, the first time bin
+-      *  is from T0 - T0+dT.
+-      *  @brief Starting absolute time.
+-      */
+-        Time mT0;
+-
+-        /**  Time interval over which data was taken.
+-      */
+-        Interval mDt;
+-
+-        /**  Original TSeries sample time.
+-      */
+-        Interval mDelta;
+-
+-        /**  Data storage order.
+-      */
+-        DSMode mDSMode;
+-
+-        /**  Data array
+-      */
+-#if __cplusplus > 201100
+-        std::unique_ptr< DVector > mData;
+-#else
+-        std::auto_ptr< DVector > mData;
+-#endif
+-    };
+-
+-    //======================================  Test if series is complex
+-    inline bool
+-    fSeries::complex( void ) const
+-    {
+-        if ( null( ) )
+-            return false;
+-        return mData->C_data( ) || mData->W_data( );
+-    }
+-
+-    //======================================  Test if series is empty
+-    inline bool
+-    fSeries::empty( void ) const
+-    {
+-        return mDSMode == kEmpty;
+-    }
+-
+-    //======================================  Test for null data vector
+-    inline bool
+-    fSeries::null( void ) const
+-    {
+-        return !mData;
+-    }
+-
+-    //======================================  Get data length
+-    inline fSeries::size_type
+-    fSeries::size( void ) const
+-    {
+-        if ( null( ) )
+-            return 0;
+-        return mData->size( );
+-    }
+-
+-    //======================================  Get number of steps
+-    inline fSeries::size_type
+-    fSeries::getNStep( void ) const
+-    {
+-        if ( single_sided( ) )
+-            return size( ) - 1;
+-        return size( );
+-    }
+-
+-    //======================================  Find bin closest to a frequency.
+-    inline fSeries::size_type
+-    fSeries::getBin( freq_type f ) const
+-    {
+-        size_type r = 0;
+-        if ( f > mF0 && mDf > 0.0 )
+-        {
+-            r = size_type( ( f - mF0 ) / mDf + 0.5 );
+-            size_type Nmax = getNStep( );
+-            if ( r > Nmax )
+-                r = Nmax;
+-        }
+-        return r;
+-    }
+-
+-    //======================================  Calculate the frequency of a bin.
+-    inline fSeries::freq_type
+-    fSeries::getBinF( size_type bin ) const
+-    {
+-        return mF0 + freq_type( bin ) * mDf;
+-    }
+-
+-#ifndef __CINT__
+-    //======================================  Get and convert series data.
+-    template < class T >
+-    inline fSeries::size_type
+-    fSeries::getData( size_type len, T* data ) const
+-    {
+-        if ( null( ) )
+-            return 0;
+-        return mData->getData( 0, len, data );
+-    }
+-#endif
+-
+-    //======================================  Get the format (single/double sided)
+-    inline fSeries::DSMode
+-    fSeries::getDSMode( void ) const
+-    {
+-        return mDSMode;
+-    }
+-
+-    //======================================  Get the time Interval
+-    inline Interval
+-    fSeries::getDt( void ) const
+-    {
+-        return mDt;
+-    }
+-
+-    //======================================  Get the end time
+-    inline Time
+-    fSeries::getEndTime( void ) const
+-    {
+-        return mT0 + mDt;
+-    }
+-
+-    //======================================  Get the frequency bin width.
+-    inline fSeries::freq_type
+-    fSeries::getFStep( void ) const
+-    {
+-        return mDf;
+-    }
+-
+-    //======================================  Get the high frequency.
+-    inline fSeries::freq_type
+-    fSeries::getHighFreq( void ) const
+-    {
+-        return mF0 + getNStep( ) * mDf;
+-    }
+-
+-    //======================================  Get the low frequency.
+-    inline fSeries::freq_type
+-    fSeries::getLowFreq( void ) const
+-    {
+-        return mF0;
+-    }
+-
+-    //======================================  Get the series title
+-    inline const char*
+-    fSeries::getName( void ) const
+-    {
+-        return mName.c_str( );
+-    }
+-
+-    //======================================  Get the Sample time of the source data
+-    inline Interval
+-    fSeries::getSampleTime( void ) const
+-    {
+-        return mDelta;
+-    }
+-
+-    //======================================  Get the Start time of the source data
+-    inline Time
+-    fSeries::getStartTime( void ) const
+-    {
+-        return mT0;
+-    }
+-
+-    //======================================  Test if the series is single sided
+-    inline bool
+-    fSeries::single_sided( void ) const
+-    {
+-        return mDSMode == kFolded || mDSMode == kFoldedOdd;
+-    }
+-
+-    //======================================  Test if the series is double sided.
+-    inline bool
+-    fSeries::double_sided( void ) const
+-    {
+-        return mDSMode == kFull || mDSMode == kFullReal;
+-    }
+-
+-    //======================================  Get a data vector reference.
+-    inline DVector&
+-    fSeries::refDVect( void )
+-    {
+-        return *mData.get( );
+-    }
+-
+-    //======================================  Get a data vector reference.
+-    inline const DVector&
+-    fSeries::refDVect( void ) const
+-    {
+-        return *mData.get( );
+-    }
+-
+-    //======================================  Get name string reference.
+-    inline const std::string&
+-    fSeries::refName( void ) const
+-    {
+-        return mName;
+-    }
+-
+-} //namespace containers
+-
+-#endif //  FSERIES_BASE_HH
+diff --git a/src/Containers/fSeries/f_series.cc b/src/Containers/fSeries/f_series.cc
+new file mode 100644
+index 0000000..82e0bcf
+--- /dev/null
++++ b/src/Containers/fSeries/f_series.cc
+@@ -0,0 +1,835 @@
++/* -*- mode: c++; c-basic-offset: 4; -*- */
++#include "f_series.hh"
++#include "DVecType.hh"
++#include <stdexcept>
++#include <iostream>
++#include "lcl_array.hh"
++#include "dv_function.hh"
++
++using namespace std;
++using namespace containers;
++
++//======================================  Constructor
++fSeries::fSeries( void )
++    : mF0( 0 ), mDf( 0 ), mT0( 0 ), mDt( 0 ), mDelta( 0 ), mDSMode( kEmpty )
++{
++}
++
++//======================================  Copy constructor
++fSeries::fSeries( const fSeries& x )
++{
++    *this = x;
++}
++
++//======================================  Data constructor
++fSeries::fSeries(
++    freq_type f0, freq_type dF, const Time& t0, Interval dT, const DVector& dV )
++    : mF0( f0 ), mDf( dF ), mT0( t0 ), mDt( dT ), mDelta( 0 ),
++      mData( dV.clone( ) )
++{
++    setDSMode( );
++}
++
++//======================================  Constructor
++fSeries::fSeries(
++    freq_type f0, freq_type dF, const Time& t0, Interval dT, DVector* dV )
++    : mF0( f0 ), mDf( dF ), mT0( t0 ), mDt( dT ), mDelta( 0 ), mData( dV )
++{
++    setDSMode( );
++}
++
++//======================================  Clone an fSeries
++void
++fSeries::appName( const string& txt )
++{
++    mName += txt;
++}
++
++//======================================  Clone an fSeries
++fSeries*
++fSeries::clone( void ) const
++{
++    return new fSeries( *this );
++}
++
++//======================================  Extend an fSeries
++void
++fSeries::extend( freq_type fmax )
++{
++    if ( mDf <= 0 || null( ) )
++        throw runtime_error( "fSeries: Attempted to extend empty series" );
++    if ( fmax >= mF0 )
++    {
++        size_type nNew = size_type( ( fmax - mF0 ) / mDf + 0.5 );
++        if ( single_sided( ) )
++            nNew++;
++        size_type end = size( );
++        if ( nNew > end )
++            mData->replace_with_zeros( end, 0, nNew - end );
++    }
++    else if ( double_sided( ) )
++    {
++        size_type nNew = size_type( ( mF0 - fmax ) / mDf + 0.5 );
++        if ( nNew )
++        {
++            mData->replace_with_zeros( 0, 0, nNew );
++            mF0 -= double( nNew ) * mDf;
++        }
++    }
++    mDelta = 0;
++}
++
++//======================================  Extract a subseries.
++fSeries
++fSeries::extract( freq_type f0, freq_type dF ) const
++{
++    freq_type fmax = f0 + dF;
++    if ( f0 < mF0 )
++        f0 = mF0;
++    size_type inx0 = getBin( f0 );
++    size_type inx1 = getBin( fmax );
++    if ( single_sided( ) )
++        inx1++;
++    if ( empty( ) || inx1 <= inx0 )
++        return fSeries( f0, mDf, mT0, mDt );
++    size_type len = inx1 - inx0;
++    fSeries   r( getBinF( inx0 ), mDf, mT0, mDt, mData->Extract( inx0, len ) );
++    r.setSampleTime( mDelta );
++
++    //----------------------------------  Force fNy point to be real.
++    if ( single_sided( ) )
++    {
++        if ( mData->W_data( ) )
++        {
++            dynamic_cast< DVectW& >( *( r.mData ) )[ len - 1 ] =
++                mData->getDouble( inx1 - 1 );
++        }
++        else if ( mData->C_data( ) )
++        {
++            dynamic_cast< DVectC& >( *( r.mData ) )[ len - 1 ] =
++                mData->getFloat( inx1 - 1 );
++        }
++    }
++    return r;
++}
++
++//======================================  get FSType
++fSeries::FSType
++fSeries::getFSType( void ) const
++{
++    return kSeries;
++}
++
++//======================================  Resample series
++fSeries
++fSeries::interpolate( freq_type fmin,
++                      freq_type fmax,
++                      freq_type df,
++                      bool      l ) const
++{
++    if ( l )
++        return interpolate( fmin, fmax, df, kLog );
++    else
++        return interpolate( fmin, fmax, df, kLinear );
++}
++
++//======================================  Resample series
++fSeries
++fSeries::interpolate( freq_type fmin,
++                      freq_type fmax,
++                      freq_type df,
++                      FSinterp  ityp ) const
++{
++
++    //----------------------------------  Set the return series.
++    fSeries r( fmin, df, mT0, mDt );
++    if ( empty( ) || fmax < fmin )
++        return r;
++
++    //----------------------------------  See if extract will work...
++    size_type inc = size_type( df / mDf + 0.5 );
++    if ( double( inc ) * mDf == df && mF0 == 0 )
++    {
++        size_type iMax = getBin( fmax ) + inc;
++        if ( inc == 1 )
++            r.mData.reset( mData->Extract( 0, iMax ) );
++        else
++            r.mData.reset( mData->Extract( 0, iMax / inc, inc ) );
++        size_type iMin = r.getBin( fmin );
++        if ( iMin )
++            r.mData->sub( 0, *r.mData, 0, iMin );
++        r.mDSMode = kFolded;
++
++        //----------------------------------  Do the full interpolation.
++    }
++    else
++    {
++        size_type nBin = size_type( ( fmax - fmin ) / df + 1e-4 ) + 1;
++
++        //------------------------------  Get the input series packing
++        size_type nF = getNStep( );
++        freq_type fHi = getHighFreq( );
++
++        //------------------------------  Interpolate (slowly but surely).
++        if ( refDVect( ).C_data( ) )
++        {
++            DVecType< dComplex > dv( nBin );
++            const fComplex*      p =
++                dynamic_cast< const DVectC& >( *mData ).refTData( );
++
++            switch ( ityp )
++            {
++            case kLinear:
++                for ( size_type i = 0; i < nBin; ++i )
++                {
++                    freq_type f = fmin + df * double( i );
++                    if ( f < mF0 || f > fHi )
++                    {
++                        dv[ i ] = dComplex( 0 );
++                    }
++                    else
++                    {
++                        size_type inx = size_type( ( f - mF0 ) / mDf );
++                        freq_type f0 = getBinF( inx );
++                        if ( inx == nF )
++                        {
++                            inx--;
++                            f0 -= mDf;
++                        }
++                        double a = ( f - f0 ) / mDf;
++                        dv[ i ] = p[ inx ] * ( 1.0 - a ) + p[ inx + 1 ] * a;
++                    }
++                }
++                break;
++            case kLog:
++                for ( size_type i = 0; i < nBin; ++i )
++                {
++                    freq_type f = fmin + df * double( i );
++                    if ( f < mF0 || f > fHi )
++                    {
++                        dv[ i ] = dComplex( 0 );
++                    }
++                    else
++                    {
++                        size_type inx = size_type( ( f - mF0 ) / mDf );
++                        freq_type f0 = getBinF( inx );
++                        if ( inx == nF )
++                        {
++                            inx--;
++                            f0 -= mDf;
++                        }
++                        double a = ( f - f0 ) / mDf;
++                        dv[ i ] = exp( log( p[ inx ] ) * ( 1 - a ) +
++                                       log( p[ inx + 1 ] ) * a );
++                    }
++                }
++                break;
++            default:
++                throw runtime_error( "interpolation method not implemented" );
++            }
++            r.setData( fmin, df, dv );
++        }
++        else if ( refDVect( ).W_data( ) )
++        {
++            DVecType< dComplex > dv( nBin );
++            const dComplex*      p =
++                dynamic_cast< const DVectW& >( *mData ).refTData( );
++            switch ( ityp )
++            {
++            case kLinear:
++                for ( size_type i = 0; i < nBin; ++i )
++                {
++                    freq_type f = fmin + df * double( i );
++                    if ( f < mF0 || f > fHi )
++                    {
++                        dv[ i ] = dComplex( 0 );
++                    }
++                    else
++                    {
++                        size_type inx = size_type( ( f - mF0 ) / mDf );
++                        freq_type f0 = getBinF( inx );
++                        if ( inx == nF )
++                        {
++                            inx--;
++                            f0 -= mDf;
++                        }
++                        double a = ( f - f0 ) / mDf;
++                        dv[ i ] = p[ inx ] * ( 1.0 - a ) + p[ inx + 1 ] * a;
++                    }
++                }
++                break;
++            case kLog:
++                for ( size_type i = 0; i < nBin; ++i )
++                {
++                    freq_type f = fmin + df * double( i );
++                    if ( f < mF0 || f > fHi )
++                    {
++                        dv[ i ] = dComplex( 0 );
++                    }
++                    else
++                    {
++                        size_type inx = size_type( ( f - mF0 ) / mDf );
++                        freq_type f0 = getBinF( inx );
++                        if ( inx == nF )
++                        {
++                            inx--;
++                            f0 -= mDf;
++                        }
++                        double a = ( f - f0 ) / mDf;
++                        dv[ i ] = exp( log( p[ inx ] ) * ( 1 - a ) +
++                                       log( p[ inx + 1 ] ) * a );
++                    }
++                }
++                break;
++            default:
++                throw runtime_error( "interpolation method not implemented" );
++            }
++            r.setData( fmin, df, dv );
++        }
++        else if ( refDVect( ).D_data( ) )
++        {
++            DVectD        dv( nBin );
++            double*       dvp = dv.refTData( );
++            const double* p =
++                dynamic_cast< const DVectD& >( *mData ).refTData( );
++            switch ( ityp )
++            {
++            case kLinear:
++                for ( size_type i = 0; i < nBin; ++i )
++                {
++                    freq_type f = fmin + df * double( i );
++                    if ( f < mF0 || f > fHi )
++                    {
++                        dvp[ i ] = 0.0;
++                    }
++                    else
++                    {
++                        size_type inx = size_type( ( f - mF0 ) / mDf );
++                        freq_type f0 = getBinF( inx );
++                        if ( inx == nF )
++                        {
++                            inx--;
++                            f0 -= mDf;
++                        }
++                        double a = ( f - f0 ) / mDf;
++                        dvp[ i ] = p[ inx ] * ( 1.0 - a ) + p[ inx + 1 ] * a;
++                    }
++                }
++                break;
++            case kLog:
++                for ( size_type i = 0; i < nBin; ++i )
++                {
++                    freq_type f = fmin + df * double( i );
++                    if ( f < mF0 || f > fHi )
++                    {
++                        dvp[ i ] = 0.0;
++                    }
++                    else
++                    {
++                        size_type inx = size_type( ( f - mF0 ) / mDf );
++                        freq_type f0 = getBinF( inx );
++                        if ( inx == nF )
++                        {
++                            inx--;
++                            f0 -= mDf;
++                        }
++                        double a = ( f - f0 ) / mDf;
++                        dvp[ i ] = exp( log( p[ inx ] ) * ( 1 - a ) +
++                                        log( p[ inx + 1 ] ) * a );
++                    }
++                }
++                break;
++            default:
++                throw runtime_error( "interpolation method not implemented" );
++            }
++            r.setData( fmin, df, dv );
++        }
++        else
++        {
++            DVectD              dv( nBin );
++            lcl_array< double > p( nF );
++            getData( nF, p.get( ) );
++            switch ( ityp )
++            {
++            case kLinear:
++                for ( size_type i = 0; i < nBin; ++i )
++                {
++                    freq_type f = fmin + df * double( i );
++                    if ( f < mF0 || f > fHi )
++                    {
++                        dv[ i ] = 0.0;
++                    }
++                    else
++                    {
++                        size_type inx = size_type( ( f - mF0 ) / mDf );
++                        freq_type f0 = getBinF( inx );
++                        if ( inx == nF )
++                        {
++                            inx--;
++                            f0 -= mDf;
++                        }
++                        double a = ( f - f0 ) / mDf;
++                        dv[ i ] = p[ inx ] * ( 1.0 - a ) + p[ inx + 1 ] * a;
++                    }
++                }
++                break;
++            case kLog:
++                for ( size_type i = 0; i < nBin; ++i )
++                {
++                    freq_type f = fmin + df * double( i );
++                    if ( f < mF0 || f > fHi )
++                    {
++                        dv[ i ] = 0.0;
++                    }
++                    else
++                    {
++                        size_type inx = size_type( ( f - mF0 ) / mDf );
++                        freq_type f0 = getBinF( inx );
++                        if ( inx == nF )
++                        {
++                            inx--;
++                            f0 -= mDf;
++                        }
++                        double a = ( f - f0 ) / mDf;
++                        dv[ i ] = exp( log( p[ inx ] ) * ( 1 - a ) +
++                                       log( p[ inx + 1 ] ) * a );
++                    }
++                }
++                break;
++            default:
++                throw runtime_error( "interpolation method not implemented" );
++            }
++            r.setData( fmin, df, dv );
++        }
++    }
++    r.setSampleTime( mDelta );
++    return r;
++}
++
++//======================================  Calculate complex argument
++fSeries
++fSeries::argument( void ) const
++{
++    //----------------------------------  Get DVectD with the argument vs. f
++    DVectD dv( dv_argument( refDVect( ) ) );
++
++    //----------------------------------  Construct an fSeries.
++    fSeries r( mF0, mDf, mT0, mDt, dv );
++    r.setSampleTime( mDelta );
++    if ( !mName.empty( ) )
++    {
++        r.mName = "argument(";
++        r.mName += mName;
++        r.mName += ")";
++    }
++    return r;
++}
++
++//======================================  Calculate modulus-squared
++fSeries
++fSeries::modsq( void ) const
++{
++    if ( empty( ) )
++        return fSeries( );
++    DVectD  dv( dv_modsq( refDVect( ) ) );
++    fSeries r( mF0, mDf, mT0, mDt, dv );
++    r.setSampleTime( mDelta );
++    if ( !mName.empty( ) )
++    {
++        r.mName = "modsq(";
++        r.mName += mName;
++        r.mName += ")";
++    }
++    return r;
++}
++
++//======================================  Calculate modulus
++fSeries
++fSeries::modulus( void ) const
++{
++    DVectD    dv( dv_modsq( refDVect( ) ) );
++    size_type N = size( );
++    for ( size_type i = 0; i < N; ++i )
++    {
++        dv[ i ] = sqrt( dv[ i ] );
++    }
++
++    fSeries r( mF0, mDf, mT0, mDt, dv );
++    r.setSampleTime( mDelta );
++    if ( !mName.empty( ) )
++    {
++        r.mName = "modulus(";
++        r.mName += mName;
++        r.mName += ")";
++    }
++    return r;
++}
++
++//======================================  Print out the fSeries header
++std::ostream&
++fSeries::dump_header( std::ostream& out ) const
++{
++    if ( !this )
++    {
++        out << "fSeries::dump_header: Request is dereferened null pointer"
++            << endl;
++        return out;
++    }
++    out << "fSeries " << mName << ": Start time " << getStartTime( )
++        << " End Time " << getEndTime( ) << endl;
++    out << "Series type: ";
++    switch ( getFSType( ) )
++    {
++    case kSeries:
++        out << "fSeries";
++        break;
++    case kDFT:
++        out << "DFT";
++        break;
++    case kPSD:
++        out << "PSD";
++        break;
++    case kCSD:
++        out << "CSD";
++        break;
++    case kASD:
++        out << "ASD";
++        break;
++    }
++    out << "  Storage type: ";
++    switch ( mDSMode )
++    {
++    case kEmpty:
++        out << "None" << endl;
++        break;
++    case kFolded:
++        out << "Folded" << endl;
++        break;
++    case kFoldedOdd:
++        out << "Folded (odd length)" << endl;
++        break;
++    case kFull:
++        out << "Full" << endl;
++        break;
++    case kFullReal:
++        out << "Full (real dft)" << endl;
++        break;
++    }
++    out << "Low Frequency " << getLowFreq( ) << " High Frequency "
++        << getHighFreq( ) << " No. frequency steps " << getNStep( ) << endl;
++    out << "Time Series start: " << mT0 << " Interval: " << mDt
++        << " Step: " << mDelta << endl;
++    return out;
++}
++
++//======================================  Print out the fSeries contents
++std::ostream&
++fSeries::Dump( std::ostream& out ) const
++{
++    dump_header( out );
++    if ( !this || null( ) )
++        return out;
++    else
++        return mData->Dump( out );
++}
++
++//======================================  Erase all data from series
++void
++fSeries::clear( void )
++{
++    if ( !null( ) )
++        mData->Clear( );
++    mDSMode = kEmpty;
++}
++
++//======================================  Remove negative frequencies
++void
++fSeries::fold( void )
++{
++    if ( empty( ) || single_sided( ) )
++        return;
++    size_type N = size( );
++    size_type ibin0 = N / 2;
++    mF0 = getBinF( ibin0 );
++    unique_ptr< DVector > save( mData.release( ) );
++    mData.reset( save->Extract( ibin0, N - ibin0 ) );
++    if ( 2 * ibin0 == N )
++    {
++        unique_ptr< DVector > temp( save->Extract( 0, 1 ) );
++        temp->Conjugate( );
++        mData->Append( *temp );
++        mDSMode = kFolded;
++    }
++    else
++    {
++        mDSMode = kFoldedOdd;
++    }
++}
++
++//======================================  Replace negative frequencies
++void
++fSeries::unfold( void )
++{
++    if ( empty( ) || double_sided( ) )
++        return;
++    size_type N = size( );
++    long      nTot = ( mDSMode == kFoldedOdd ) ? 2 * N - 1 : 2 * ( N - 1 );
++    //if (mDelta != Interval(0.0)) nTot = long(1.0 / (mDelta * mDf) + 0.5);
++    //else                         nTot = 2 * (N - 1);
++    unique_ptr< DVector > negs( mData->clone( ) );
++    negs->reverse( );
++    negs->Conjugate( );
++    // note tricky code...
++    // the zero bin is the Nth bin of the folded series.
++    if ( ( nTot % 2 ) == 0 )
++        negs->replace( N - 1, 1, *mData, 0, N - 1 );
++    else
++        negs->replace( N - 1, 1, *mData, 0, N );
++    mData.swap( negs );
++    mF0 -= mDf * ( N - 1 );
++    mDSMode = kFullReal;
++}
++
++//======================================  Set data from DVector
++void
++fSeries::setData( freq_type f0, freq_type df, const DVector& data )
++{
++    setData( f0, df, data.clone( ) );
++}
++
++//======================================  setData
++void
++fSeries::setData( freq_type f0, freq_type df, DVector* data )
++{
++    mF0 = f0;
++    mDf = df;
++    if ( mData.get( ) != data )
++        mData.reset( data );
++    setDSMode( );
++}
++
++//======================================  Set the data storage mode
++void
++fSeries::setDSMode( void )
++{
++    if ( mDf <= 0.0 )
++        throw runtime_error( "fSeries: Invalid frequency step." );
++    if ( !size( ) )
++        mDSMode = kEmpty;
++    else if ( mF0 < 0 )
++        mDSMode = kFull;
++    else
++        mDSMode = kFolded;
++}
++
++//======================================  Set the name string
++void
++fSeries::setName( const std::string& name )
++{
++    mName = name;
++}
++
++//======================================  Set the source sample time
++void
++fSeries::setSampleTime( Interval dT )
++{
++    mDelta = dT;
++}
++
++//======================================  Set the time span
++void
++fSeries::setTimeSpan( const Time& t0, Interval dT )
++{
++    mT0 = t0;
++    mDt = dT;
++}
++
++//======================================  Reserve space in the data vector
++void
++fSeries::reserve( size_type len )
++{
++    if ( !null( ) )
++        refDVect( ).reserve( len );
++}
++
++//======================================  Assignment operators.
++fSeries&
++fSeries::operator=( const fSeries& x )
++{
++    mName = x.mName;
++    mF0 = x.mF0;
++    mDf = x.mDf;
++    mT0 = x.mT0;
++    mDt = x.mDt;
++    mDSMode = x.mDSMode;
++    mDelta = x.mDelta;
++    if ( !x.empty( ) )
++        mData.reset( x.refDVect( ).clone( ) );
++    else
++        mData.reset( 0 );
++    return *this;
++}
++
++//======================================  Bias operator
++fSeries&
++fSeries::operator+=( double bias )
++{
++    if ( !empty( ) )
++        refDVect( ) += bias;
++    return *this;
++}
++
++//======================================  Addition operator
++fSeries&
++fSeries::operator+=( const fSeries& rhs )
++{
++    if ( empty( ) || size( ) != rhs.size( ) || mDSMode != rhs.mDSMode )
++    {
++        cerr << "fSeries sizes: this=" << size( ) << " that=" << rhs.size( )
++             << endl;
++        throw runtime_error( "fSeries: Add an unequal length fSeries" );
++    }
++    refDVect( ) += rhs.refDVect( );
++    return *this;
++}
++
++//======================================  Subtract operator
++fSeries&
++fSeries::operator-=( const fSeries& rhs )
++{
++    if ( empty( ) || size( ) != rhs.size( ) || mDSMode != rhs.mDSMode )
++        throw runtime_error( "fSeries: Subtract an unequal length fSeries" );
++    refDVect( ) -= rhs.refDVect( );
++    return *this;
++}
++
++//======================================  Scale operator
++fSeries&
++fSeries::operator*=( double scale )
++{
++    if ( !empty( ) )
++        refDVect( ) *= scale;
++    return *this;
++}
++
++//======================================  Scale operator
++fSeries&
++fSeries::operator*=( dComplex scale )
++{
++    if ( !empty( ) )
++    {
++        if ( complex( ) )
++            refDVect( ).scale( 0, scale, size( ) );
++        else
++            refDVect( ) *= scale.real( );
++    }
++    return *this;
++}
++
++//======================================  Multiply operator
++fSeries&
++fSeries::operator*=( const fSeries& fs )
++{
++    if ( empty( ) || size( ) != fs.size( ) || mDSMode != fs.mDSMode )
++        throw runtime_error( "fSeries: Multiply by an unequal length fSeries" );
++    refDVect( ) *= fs.refDVect( );
++    return *this;
++}
++
++//======================================  Divide operator
++fSeries&
++fSeries::operator/=( const fSeries& fs )
++{
++    if ( empty( ) || size( ) != fs.size( ) || mDSMode != fs.mDSMode )
++        throw runtime_error( "fSeries: Divide by an unequal length series" );
++    refDVect( ) /= fs.refDVect( );
++    return *this;
++}
++
++//======================================  Parenthesis operator.
++dComplex
++fSeries::operator( )( freq_type freq ) const
++{
++    if ( null( ) )
++        throw runtime_error( "Dereferencing null fSeries" );
++    return refDVect( ).getCplx( getBin( freq ) );
++}
++
++//======================================  Set data template.
++template < class T >
++void
++fSeries::setData( freq_type f0, freq_type df, size_type len, const T* data )
++{
++    mF0 = f0;
++    mDf = df;
++    mData.reset( new DVecType< T >( len, data ) );
++    setDSMode( );
++}
++
++//======================================  Template instanciation
++#if !defined( __SUNPRO_CC )
++template void fSeries::setData< float >( freq_type    f0,
++                                         freq_type    df,
++                                         size_type    len,
++                                         const float* data );
++
++template void fSeries::setData< double >( freq_type     f0,
++                                          freq_type     df,
++                                          size_type     len,
++                                          const double* data );
++
++template void fSeries::setData< fComplex >( freq_type       f0,
++                                            freq_type       df,
++                                            size_type       len,
++                                            const fComplex* data );
++
++template void fSeries::setData< dComplex >( freq_type       f0,
++                                            freq_type       df,
++                                            size_type       len,
++                                            const dComplex* data );
++#endif
++
++//======================================  Type template Constructor
++template < class T >
++fSeries::fSeries( freq_type   f0,
++                  freq_type   dF,
++                  const Time& t0,
++                  Interval    dT,
++                  size_type   NData,
++                  const T*    Data )
++    : mF0( f0 ), mDf( dF ), mT0( t0 ), mDt( dT ), mDelta( 0 )
++{
++    if ( NData )
++        mData.reset( new DVecType< T >( NData, Data ) );
++    setDSMode( );
++}
++
++#if !defined( __SUNPRO_CC )
++template fSeries::fSeries( freq_type    f0,
++                           freq_type    dF,
++                           const Time&  t0,
++                           Interval     dT,
++                           size_type    len,
++                           const float* data );
++
++template fSeries::fSeries( freq_type     f0,
++                           freq_type     dF,
++                           const Time&   t0,
++                           Interval      dT,
++                           size_type     len,
++                           const double* data );
++
++template fSeries::fSeries( freq_type       f0,
++                           freq_type       dF,
++                           const Time&     t0,
++                           Interval        dT,
++                           size_type       len,
++                           const fComplex* data );
++
++template fSeries::fSeries( freq_type       f0,
++                           freq_type       dF,
++                           const Time&     t0,
++                           Interval        dT,
++                           size_type       len,
++                           const dComplex* data );
++#endif
+diff --git a/src/Containers/fSeries/f_series.hh b/src/Containers/fSeries/f_series.hh
+new file mode 100644
+index 0000000..c4e3f28
+--- /dev/null
++++ b/src/Containers/fSeries/f_series.hh
+@@ -0,0 +1,844 @@
++/* -*- mode: c++; c-basic-offset: 4; -*- */
++#ifndef FSERIES_BASE_HH
++#define FSERIES_BASE_HH
++
++#include <string>
++#include <iosfwd>
++#include <memory>
++#include "gds_memory.hh"
++#include "Complex.hh"
++#include "DVector.hh"
++#include "Time.hh"
++#include "Interval.hh"
++
++class DVector;
++
++/**  The containers namespace includes a set of second generation signal 
++  *  processing containers. These start with the %fSeries-based frequency
++  *  series containers, including:
++  *  - fSeries   Generic fixed-spacing frequency series base class.
++  *  - ASD       Amplitude spectral density
++  *  - CSD       Cross-spectral density
++  *  - DFT       Discrete fourier transform
++  *  - PSD       Power spectral density
++  *  @brief Second generation container classes.
++  *  @author J. Zweizig
++  */
++namespace containers
++{
++
++    /**  The %fSeries class is used to represent a series in the frequency
++  *  domain with constant frequency spacing (\f$\Delta f\f$) and arbitrary 
++  *  length. The %fSeries may represent a Discrete Fourier transform (DFT) of 
++  *  a signal, a Power Spectral density (PSD) a cross spectral density (CSD)
++  *  or anything else. The %fSeries may be either single-sided or double-sided
++  *  (see the following table for parameters).
++  *  <table>
++  *  <tr><td> Type </td>
++  *      <td> Frequency Range </td>
++  *      <td> Number of bins</td></tr>
++  *  <tr><td> single-sided </td>
++  *      <td> \f$ 0 <= f <= f_{Ny} \f$</td>
++  *      <td> \f$ f_{Ny}/\Delta f + 1 \f$ </td></tr>
++  *  <tr><td> double-sided </td>
++  *      <td> \f$ -f_{Ny} <= f < f_{Ny} \f$ </td>
++  *      <td> \f$ 2 f_{Ny} / \Delta f \f$ </td></tr>
++  *  </table>
++  *  Version history:
++  *  - v1.0: Original version
++  *  - v1.1: Add delta, implement dump(), fix use of null() / empty(), fix 
++  *          getNStep() for double sided series.
++  *  @brief  Frequency series class.
++  *  @author J. Zweizig
++  *  @version 1.1; Modified April 7, 2008
++  */
++    class fSeries
++    {
++    public:
++        ///  Data type used to represent vector lengths.
++        typedef unsigned long size_type;
++
++        ///  Data type used to represent frequency values.
++        typedef double freq_type;
++
++        /**  Enumerate data storage modes. Single sided series are stored linearly
++      *  from \f$ f_0 - f_{Ny} \f$ in increasing bins. Double sided series are 
++      *  stored with \f$ F_{min} -> F_0 -> F_{max} - \Delta f \f$ in bins 
++      *  \f$ 0 -> N-1 \f$.
++      *  @brief Data Storage mode.
++      */
++        enum DSMode
++        {
++            kEmpty, ///< Series is empty
++            kFull, ///< All Series elements are stored (no folding)
++            kFullReal, ///< Fulll series from a real tseries (C[f] = C[-f]*)
++            kFolded, ///< Folded dft of real data from even size series.
++            kFoldedOdd ///< Folded dft of real data from odd size series.
++        };
++
++        /**  Enumerate series type.
++      *  @brief Data Series type
++      */
++        enum FSType
++        {
++            kSeries, ///< Generic %fSeries
++            kDFT, ///< Discrete fourier transform of time-series data (DFT).
++            kPSD, ///< Power spectral density data (PSD).
++            kCSD, ///< Cross spectral density data (CSD).
++            kASD ///< Amplitude spectral density data (ASD).
++        };
++
++        /**  Interpolation method selection.
++      *  @brief Interpolation type
++      */
++        enum FSinterp
++        {
++            kLinear, ///< Linear interpolation.
++            kLog, ///< Logatithmic interpolation
++            kSpline ///< Cubic spline interpolation (not implemented yet)
++        };
++
++        /**  Construct an empty %fSeries.
++      *  @brief Default constructor.
++      */
++        fSeries( void );
++
++        /**  Construct an %fSeries and initialize it from another %fSeries.
++      *  @brief Copy constructor.
++      *  @param fs %fSeries to be copied.
++      */
++        fSeries( const fSeries& fs );
++
++        /**  Move syntax constructor.
++      *  @brief Move constructor.
++      *  @param fs %fSeries to be moved.
++      */
++        fSeries( fSeries&& fs ) = default;
++
++        /**  Construct an %fSeries with a specified frequency offset, frequency
++      *  bin and float input data.
++      *  @brief Data constructor.
++      *  @param f0    Lowest frequency to be contained by the %fSeries (in Hz)
++      *  @param dF    Frequency step between adjacent elements (in Hz) 
++      *  @param t0    Start time of the data represented by the %fSeries
++      *  @param dT    Time interval of the data represented by the %fSeries.
++      *  @param Ndata Number of data words.
++      *  @param Data  Float data to be loaded into the %fSeries.
++      */
++        template < class T >
++        fSeries( freq_type   f0,
++                 freq_type   dF,
++                 const Time& t0,
++                 Interval    dT,
++                 size_type   Ndata,
++                 const T*    Data );
++
++        /**  Construct an %fSeries with a specified frequency offset, frequency
++      *  bin, start time, interval and data vector.
++      *  @brief Data constructor.
++      *  @param f0   Lowest frequency to be contained by the %fSeries (in Hz)
++      *  @param dF   Frequency step between adjacent elements (in Hz) 
++      *  @param t0   Start time of the data represented by the %fSeries
++      *  @param dT   Time interval of the data represented by the %fSeries.
++      *  @param dV   Float data to be loaded into the %fSeries.
++      */
++        fSeries( freq_type      f0,
++                 freq_type      dF,
++                 const Time&    t0,
++                 Interval       dT,
++                 const DVector& dV );
++
++        /**  Construct an %fSeries with a specified frequency offset, frequency
++      *  bin, start time, interval and an optional data vector. Ownership of 
++      *  the data vector is assumed by the %fSeries.
++      *  @brief Data constructor.
++      *  @param f0   Lowest frequency to be contained by the %fSeries (in Hz)
++      *  @param dF   Frequency step between adjacent elements (in Hz) 
++      *  @param t0   Start time of the data represented by the %fSeries
++      *  @param dT   Time interval of the data represented by the %fSeries.
++      *  @param dV   Data to be used by the %fSeries.
++      */
++        fSeries( freq_type   f0,
++                 freq_type   dF,
++                 const Time& t0,
++                 Interval    dT,
++                 DVector*    dV = 0 );
++
++        /**  Destroy a series object.
++      *  @brief %fSeries Destructor.
++      */
++        virtual ~fSeries( void )
++        {
++        }
++
++        /**  Calculate the complex argument of each (complex) element in a series.
++      *  The results are returned as a double %fSeries. If the original series
++      *  is real a series is returned with an equal length and zero contents.
++      *  @brief Complex argument series.
++      *  @return %fSeries with complex argument values.
++      */
++        fSeries argument( void ) const;
++
++        /**  Make an identical copy of the specified object. In general the 
++      *  object will share the copy on write data vector (CWVec) with its
++      *  clone until the object or its clone attempts to mondify the data.
++      *  @brief Clone a frequency series object.
++      *  @return Pointer to the %fSeries clone.
++      */
++        virtual fSeries* clone( void ) const;
++
++        /**  Test for complex data
++      *  @brief Test complex
++      *  @return True if complex
++      */
++        virtual bool complex( void ) const;
++
++        /**  Pad the %fSeries with zeroes to the specified maximum frequency. 
++      *  If the new frequency is less than the current minimum frequency of
++      *  a double sided frequency series, the appriopriate number of zero
++      *  words are inserted at the beginnning of the series and the low 
++      *  frequency is adjusted accordingly. 
++      *  @brief   Extend the %fSeries.
++      *  @param  fmax New maximum frequency (in Hz)
++      */
++        void extend( freq_type fmax );
++
++        /**  Returns an %fSeries containing a subset of the parent %fSeries. If the 
++      *  requested low frequency (\a f0) is below the lowest frequency in the 
++      *  series, the extracted series starts with the low frequency of the
++      *  original series. The upper frequency (\em fhi ) is calculated 
++      *  from \f$ fhi = f0 + dF \f$ rounded down to the nearest integer 
++      *  frequency increment. If the starting series is single-sided, the 
++      *  upper frequency point is included in the extracted series. The high
++      *  frequency point in a single-sided series is treated as a Nyquist 
++      *  frequency coefficient in that it is forced to have a zero imaginary 
++      *  part.
++      *  @brief Get a substring of the %fSeries.
++      *  @param f0 Lowest frequency to be extracted from the %fSeries (in Hz)
++      *  @param dF Frequency interval to be extracted (in Hz) 
++      *  @return The specified sub-series
++      */
++        fSeries extract( freq_type f0, freq_type dF ) const;
++
++        /**  Optionally convert and copy the first 'len' entries of a series to 
++      *  a float array. If the %fSeries is complex, only the real part of the
++      *  data are returned.
++      *  @brief Get float series data.
++      *  @param len  Maximum number of entries to be copied.
++      *  @param data Float buffer into which the data will be copied.
++      *  @return The number of entries copied
++      */
++        template < class T >
++        size_type getData( size_type len, T* data ) const;
++
++        /**  Returns the double-sided mode enumerator indicating the series format,
++      *  \e i.e. double-sided, single-sided, single from odd lrngth series or 
++      *  empty.
++      *  @brief Get the mode enumerator.
++      *  @return The mode enumerator indicating single/double sidedness.
++      */
++        DSMode getDSMode( void ) const;
++
++        /**  Returns the time interval as specified in the source data.
++      *  @brief Get the time interval.
++      *  @return The time interval of the data summarized by this series.
++      */
++        Interval getDt( void ) const;
++
++        /**  Returns the end time as specified in the source data.
++      *  @brief Get the end time.
++      *  @return The end time of the data summarized by this series.
++      */
++        Time getEndTime( void ) const;
++
++        /**  Returns the minimum frequency covered by the data.
++      *  @brief Get the minimum frequency.
++      *  @return Lowest frequency represented in the %fSeries in Hz.
++      */
++        freq_type getLowFreq( void ) const;
++
++        /**  Returns the maximum (Nyquist) frequency of the data.
++      *  @brief Get the maximum Frequency.
++      *  @return Highest frequency represented in the %fSeries in Hz.
++      */
++        freq_type getHighFreq( void ) const;
++
++        /**  Returns the Frequency interval between two adjacent points of the 
++      *  %fSeries (\f$ \Delta f \f$).
++      *  @brief Get the frequency step.
++      *  @return The frequency interval in Hz.
++      */
++        freq_type getFStep( void ) const;
++
++        /**  Returns the FSType enumerated series type of this instance.
++      *  @brief Frequency series type.
++      *  @return FSType numerated series type.
++      */
++        virtual FSType getFSType( void ) const;
++
++        /**  Returns a pointer to the frequency series name.
++      *  @brief Get the series name.
++      *  @return A constant pointer to the series name.
++      */
++        const char* getName( void ) const;
++
++        /**  Returns the number of frequency steps. Note that the number of
++      *  data points is in fact one greater than the number of steps
++      *  because both the f=0 and f=Nyquist entries are included.
++      *  @brief Get the number of frequency steps.
++      *  @return the number of frequency steps.
++      */
++        size_type getNStep( void ) const;
++
++        /**  Get the original sample time (i.e. the inverse of the sample rate),
++      *  of the time series this %fSeries was derived from. The sample time
++      *  is set to zero if it is undefined or ambiguous.
++      *  @brief Get the sample time.
++      *  @return Sample time or zero.
++      */
++        Interval getSampleTime( void ) const;
++
++        /**  Returns the start time as specified in the source data.
++      *  @brief Get the start time.
++      *  @return The start time of the data summarized by this series.
++      */
++        Time getStartTime( void ) const;
++
++        /**  Interpolate the current %fSeries in the specified frequency range
++      *  (\c fMin\ -\ fMax ) at points separated by the specified frequency 
++      *  spacing (\a df ). The returned %fSeries is a single sided 
++      *  series starting at \c f=0 with the specified spacing and points 
++      *  up to (but not including) fMax. It is non-zero only in the specified 
++      *  range. No interpolation is performed if the requested frequency step 
++      *  is not an integer multiple of the current step. If interpolation is 
++      *  necessary, it is performed according to the method specified by the 
++      *  \a intype parameter.
++      *  @brief Interpolate the %fSeries points
++      *  @return Interpolated frequency series.
++      *  @param fMin   Minimum non-zero frequency of returned series
++      *  @param fMax   Maximum frequency of returned series
++      *  @param df     Frequency step of returned series.
++      *  @param intype Interpolation method enumerator.
++      */
++        fSeries interpolate( freq_type fMin,
++                             freq_type fMax,
++                             freq_type df,
++                             FSinterp  intype = kLinear ) const;
++
++        /**  Interpolate the current %fSeries in the specified frequency range
++      *  (<tt> fMin - fMax</tt>) at points separated by the specified frequency 
++      *  spacing (<tt>df</tt>). The returned %fSeries is a single sided 
++      *  series starting at <tt>f=0</tt> with the specified spacing and points 
++      *  up to (but not including) fMax. It is non-zero only in the specified 
++      *  range. No interpolation is performed if the requested frequency step 
++      *  is not an integer multiple of the current step. If interpolation is 
++      *  necessary, it may be performed either linearly or logarithmically as 
++      *  specified by the <tt>logar</tt> parameter.
++      *  @brief Interpolate the %fSeries points
++      *  @return Interpolated frequency series.
++      *  @param fMin  Minimum non-zero frequency of returned series
++      *  @param fMax  Maximum frequency of returned series
++      *  @param df    Frequency step of returned series.
++      *  @param logar If true, logarithmic interpolation.
++      */
++        fSeries interpolate( freq_type fMin,
++                             freq_type fMax,
++                             freq_type df,
++                             bool      logar ) const;
++
++        /**  Calculate the modulus squared of each element in a series. The 
++      *  result is returned as a double %fSeries.
++      *  @brief Modulus squared sereies.
++      *  @return %fSeries with modulus squared values.
++      */
++        fSeries modsq( void ) const;
++
++        /**  Calculate the modulus squared of each element in a series. The 
++      *  result is returned as a double %fSeries.
++      *  @brief Modulus squared series.
++      *  @return %fSeries with modulus squared values.
++      */
++        fSeries modulus( void ) const;
++
++        /**  Get a constant data vector reference.
++      *  @brief DVector reference.
++      *  @return A constant reference to the series data vector.
++      */
++        const DVector& refDVect( void ) const;
++
++        /**  Get the data vector reference.
++      *  @brief DVector reference.
++      *  @return A reference to the series data vector.
++      */
++        DVector& refDVect( void );
++
++        /**  Get a constant reference to the name string.
++      *  @brief Name string reference.
++      *  @return Constant reference to the name string.
++      */
++        const std::string& refName( void ) const;
++
++        /**  Get the number of data words. This is generally 
++      *	 \f$ (f_{High} - f_{Low}) / \Delta f + 1 \f$ for single-sided
++      *  series and  \f$ (f_{High} - f_{Low}) / \Delta f \f$ for 
++      *  double-sided series.
++      *  @return The current number of data words.
++      */
++        size_type size( void ) const;
++
++        /**  A formatted dump of the %fSeries header information is written to 
++      *  the output stream.
++      *  @brief Dump the %fSeries header to an output stream.
++      *  @param out I/O stream to which the formatted dump is to be written.
++      *  @return The I/O stream passed to the function.
++      */
++        std::ostream& dump_header( std::ostream& out ) const;
++
++        /**  A formatted dump of the %fSeries header and data are written to the
++      *  output stream.
++      *  @brief Dump the contents of the %fSeries to an output stream.
++      *  @param out I/O stream to which the formatted dump is to be written.
++      *  @return The I/O stream passed to the function.
++      */
++        std::ostream& Dump( std::ostream& out ) const;
++
++        /**  Test if the Fourier coefficients are stored in (full) double-sided
++      *  format. Note that this method returns false for an empty series.
++      *  @brief Test for double-sided storage.
++      *  @return true if double-sided.
++      */
++        bool double_sided( void ) const;
++
++        /**  Test if the %fSeries is empty.
++      *  @brief Test for an empty series.
++      *  @return true if empty.
++      */
++        bool empty( void ) const;
++
++        /**  Test if the Fourier coefficients are stored in (folded) single-sided
++      *  format. Note that this method returns false for an empty series. 
++      *  @brief Test for single-sided storage.
++      *  @return true if single-sided.
++      */
++        bool single_sided( void ) const;
++
++        /**  Test if the %fSeries DVector is unassigned.
++      *  @brief Test for null series.
++      *  @return true if null.
++      */
++        bool null( void ) const;
++
++        //------------------------------  Mutators
++        /**  The specified string is appended to the existing series name.
++      *  @brief Append a string to the series name.
++      *  @param name String to be appended to the series name.
++      */
++        void appName( const std::string& name );
++
++        /**  Delete the data vector.
++      *  @brief Clear the data vector.
++      */
++        void clear( void );
++
++        /**  If the starting %fSeries is double-sided, the +fNy bin is set to
++      *  the conjugate of the -fNy bin and all negative frequency bins are 
++      *  deleted. The DSType field is set to kFolded (i.e. single-sided).
++      *  Should it check whether <tt>fSeries(f) == conj(fSeries(-f)</tt>)?
++      *  What should be done if <tt>fMin != -fMax</tt>?
++      *  @brief Fold the %fSeries
++      */
++        virtual void fold( void );
++
++        /**  If the starting %fSeries is single-sided, the -dF -> -fNy bins are
++      *  set to the conjugate of the dF -> fNy bins. The DSType field is set 
++      *  to kFull (i.e. double-sided).
++      *  @brief Unfold the %fSeries
++      */
++        virtual void unfold( void );
++
++        /**  The Complex data in \a data are optionally converted to the data 
++      *  vector type and then used to overwrite the series data.
++      *  @brief Overwrite the series with specified data.
++      *  @param f0 Frequency of the first bin
++      *  @param df Frequency bin increment.
++      *  @param len  Number of data words to be written to the %fSeries.
++      *  @param data A Data array to be written to the %fSeries.
++      */
++        template < class T >
++        void
++        setData( freq_type f0, freq_type df, size_type len, const T* data );
++
++        /**  The current data vector is replaced by a clone of the DVector 
++      *  \a data.
++      *  @brief Overwrite the series with the specified data vector.
++      *  @param f0 Frequency of the first bin
++      *  @param df Frequency bin increment.
++      *  @param data A DVector to be copied into the %fSeries.
++      */
++        void setData( freq_type f0, freq_type df, const DVector& data );
++
++        /**  The current data are cleared and the DVector \ data is taken over 
++      *  by the %fSeries.
++      *  @brief Overwrite the series with the specified data vector.
++      *  @param f0 Frequency of the first bin
++      *  @param df Frequency bin increment.
++      *  @param data A DVector to be adopted by the %fSeries.
++      */
++        void setData( freq_type f0, freq_type df, DVector* data );
++
++        /**  Set the data storage mode based on the presence of the data vector
++      *  and the sign of f0.
++      *  \brief Set the data storage mode.
++      */
++        void setDSMode( void );
++
++        /**  The series name is set to the 'name' string.
++      *  @brief Set the series name.
++      *  @param name Series name.
++      */
++        void setName( const std::string& name );
++
++        /**  Set the original sample time (\e i.e. the inverse of the sample rate),
++      *  of the time series this %fSeries was derived from. The sample time
++      *  is set to zero if it is undefined or ambiguous.
++      *  @brief Set the sample time.
++      *  @param dT Sample time.
++      */
++        void setSampleTime( Interval dT );
++
++        /**  The series time span is set.
++      *  @brief Set the time span.
++      *  @param t0 Start time of the data from which the %fSeries is derived.
++      *  @param dT Interval over which the data were derived or valid.
++      */
++        void setTimeSpan( const Time& t0, Interval dT );
++
++        /**  The data vector length is increased to accomodate at least the 
++      *  specified number of entries. If sufficient storage has already
++      *  been allocated, no action is taken. The vector data length 
++      *  remains unchanged.
++      *  @brief Increase the data vector storage.
++      *  @param len Minimum length requested.
++      *  @return Desired minimum storage length in words.
++      */
++        void reserve( size_type len );
++
++        /**  The frequency information, Time information and data of the lhs 
++      *  series are replaced by those of the rhs series. The data are 
++      *  converted to the the type of the lhs series if necessary.
++      *  @brief Assignment operator.
++      *  @param rhs The series to be copied.
++      *  @return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator=( const fSeries& rhs );
++
++        /**  Delete the move syntax assignment operator to enforce the type 
++      *  conversion.
++      *  @brief Move syntax assignment operator.
++      *  @param rhs The series to be moved.
++      *  @return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator=( fSeries&& rhs ) = default;
++
++        /**  The rhs constant is added to the lhs series on a element by element
++      *  basis. The result replaces the original contents of the lhs series.
++      *  @brief Bias an %fSeries.
++      *  @param bias The constant to be added.
++      *  @return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator+=( double bias );
++
++        /**  The rhs series is added to the lhs series on a element by element 
++      *  basis. The result replaces the original contents of the lhs series.
++      *  @brief Add two %fSeries.
++      *  @param rhs The series to be added.
++      *  @return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator+=( const fSeries& rhs );
++
++        /**  The rhs series is subtracted from the lhs series on a element by 
++      *  element basis.  The result replaces the original contents of the 
++      *  lhs series.
++      *  @brief Subtract a series.
++      *  @param rhs The series to be subtracted.
++      *  @return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator-=( const fSeries& rhs );
++
++        /**  Each element of the lhs series is multiplied by a scale factor.
++      *  @brief Scale a series.
++      *  @param scale The scale factor.
++      *  @return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator*=( double scale );
++
++        /**  Each element of the series is multiplied by a complex scale factor.
++      *  Real series data are not converted to complex, so if the series data 
++      *  are real, the real part of the scale factor will be used.
++      *  \brief Scale a series.
++      *  \param scale Complex scale factor.
++      *  \return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator*=( dComplex scale );
++
++        /**  Each element of the lhs series is multiplied by the corresponding
++      *  element of the argument series.
++      *  @brief Multiply a series by another.
++      *  @param fs The multiplier series.
++      *  @return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator*=( const fSeries& fs );
++
++        /**  Each element of the lhs series is divided by the corresponding
++      *  element of the argument series.
++      *  @brief Divide a series by another.
++      *  @param fs The divisor series.
++      *  @return a reference to the updated lhs %fSeries.
++      */
++        fSeries& operator/=( const fSeries& fs );
++
++        /**  The complex amplitude at the closest bin is returned.
++      *  @brief Get the amplitude at a specified frequency.
++      *  @param freq Frequency in Hz at which the series is to be evaluated.
++      *  @return Complex value of the series at the specified frequency.
++      */
++        dComplex operator( )( freq_type freq ) const;
++
++        /**  Calculate the bin number closest to a given frequency. The returned
++      *  bin number is always less than or equal to the number of steps. In 
++      *  a double sided series this may point after the last valid bin. If  
++      *  the frequency is less than mF0 (including negative frequencies in a
++      *  single sided series) bin 0 is returned.
++      *  @brief Get a bin number.
++      *  @param f Frequency for which the bin number is to be calculated.
++      *  @return Bin number.
++      */
++        size_type getBin( freq_type f ) const;
++
++        /**  Calculate the frequency of a given bin. No check is made on the
++      *  bin number validity.
++      *  @brief Get the bin frequency.
++      *  @param bin Bin number.
++      *  @return Bin frequency.
++      */
++        freq_type getBinF( size_type bin ) const;
++
++    private:
++        /**  Frequency series name string.
++      *  @brief Data Name
++      */
++        std::string mName;
++
++        /**  Not zero if the series source was heterodyned.
++      *  @brief Minimum frequency.
++      */
++        freq_type mF0;
++
++        /**  Frequency bin size
++      */
++        freq_type mDf;
++
++        /**  GPS time of the first sample in the series. If the series represents
++      *  a physical quantity integrated over a time bin, the first time bin
++      *  is from T0 - T0+dT.
++      *  @brief Starting absolute time.
++      */
++        Time mT0;
++
++        /**  Time interval over which data was taken.
++      */
++        Interval mDt;
++
++        /**  Original TSeries sample time.
++      */
++        Interval mDelta;
++
++        /**  Data storage order.
++      */
++        DSMode mDSMode;
++
++        /**  Data array
++      */
++#if __cplusplus > 201100
++        std::unique_ptr< DVector > mData;
++#else
++        std::auto_ptr< DVector > mData;
++#endif
++    };
++
++    //======================================  Test if series is complex
++    inline bool
++    fSeries::complex( void ) const
++    {
++        if ( null( ) )
++            return false;
++        return mData->C_data( ) || mData->W_data( );
++    }
++
++    //======================================  Test if series is empty
++    inline bool
++    fSeries::empty( void ) const
++    {
++        return mDSMode == kEmpty;
++    }
++
++    //======================================  Test for null data vector
++    inline bool
++    fSeries::null( void ) const
++    {
++        return !mData;
++    }
++
++    //======================================  Get data length
++    inline fSeries::size_type
++    fSeries::size( void ) const
++    {
++        if ( null( ) )
++            return 0;
++        return mData->size( );
++    }
++
++    //======================================  Get number of steps
++    inline fSeries::size_type
++    fSeries::getNStep( void ) const
++    {
++        if ( single_sided( ) )
++            return size( ) - 1;
++        return size( );
++    }
++
++    //======================================  Find bin closest to a frequency.
++    inline fSeries::size_type
++    fSeries::getBin( freq_type f ) const
++    {
++        size_type r = 0;
++        if ( f > mF0 && mDf > 0.0 )
++        {
++            r = size_type( ( f - mF0 ) / mDf + 0.5 );
++            size_type Nmax = getNStep( );
++            if ( r > Nmax )
++                r = Nmax;
++        }
++        return r;
++    }
++
++    //======================================  Calculate the frequency of a bin.
++    inline fSeries::freq_type
++    fSeries::getBinF( size_type bin ) const
++    {
++        return mF0 + freq_type( bin ) * mDf;
++    }
++
++#ifndef __CINT__
++    //======================================  Get and convert series data.
++    template < class T >
++    inline fSeries::size_type
++    fSeries::getData( size_type len, T* data ) const
++    {
++        if ( null( ) )
++            return 0;
++        return mData->getData( 0, len, data );
++    }
++#endif
++
++    //======================================  Get the format (single/double sided)
++    inline fSeries::DSMode
++    fSeries::getDSMode( void ) const
++    {
++        return mDSMode;
++    }
++
++    //======================================  Get the time Interval
++    inline Interval
++    fSeries::getDt( void ) const
++    {
++        return mDt;
++    }
++
++    //======================================  Get the end time
++    inline Time
++    fSeries::getEndTime( void ) const
++    {
++        return mT0 + mDt;
++    }
++
++    //======================================  Get the frequency bin width.
++    inline fSeries::freq_type
++    fSeries::getFStep( void ) const
++    {
++        return mDf;
++    }
++
++    //======================================  Get the high frequency.
++    inline fSeries::freq_type
++    fSeries::getHighFreq( void ) const
++    {
++        return mF0 + getNStep( ) * mDf;
++    }
++
++    //======================================  Get the low frequency.
++    inline fSeries::freq_type
++    fSeries::getLowFreq( void ) const
++    {
++        return mF0;
++    }
++
++    //======================================  Get the series title
++    inline const char*
++    fSeries::getName( void ) const
++    {
++        return mName.c_str( );
++    }
++
++    //======================================  Get the Sample time of the source data
++    inline Interval
++    fSeries::getSampleTime( void ) const
++    {
++        return mDelta;
++    }
++
++    //======================================  Get the Start time of the source data
++    inline Time
++    fSeries::getStartTime( void ) const
++    {
++        return mT0;
++    }
++
++    //======================================  Test if the series is single sided
++    inline bool
++    fSeries::single_sided( void ) const
++    {
++        return mDSMode == kFolded || mDSMode == kFoldedOdd;
++    }
++
++    //======================================  Test if the series is double sided.
++    inline bool
++    fSeries::double_sided( void ) const
++    {
++        return mDSMode == kFull || mDSMode == kFullReal;
++    }
++
++    //======================================  Get a data vector reference.
++    inline DVector&
++    fSeries::refDVect( void )
++    {
++        return *mData.get( );
++    }
++
++    //======================================  Get a data vector reference.
++    inline const DVector&
++    fSeries::refDVect( void ) const
++    {
++        return *mData.get( );
++    }
++
++    //======================================  Get name string reference.
++    inline const std::string&
++    fSeries::refName( void ) const
++    {
++        return mName;
++    }
++
++} //namespace containers
++
++#endif //  FSERIES_BASE_HH
+diff --git a/src/SignalProcessing/FDFilter/FDFilter.cc b/src/SignalProcessing/FDFilter/FDFilter.cc
+index f21a198..07763a3 100644
+--- a/src/SignalProcessing/FDFilter/FDFilter.cc
++++ b/src/SignalProcessing/FDFilter/FDFilter.cc
+@@ -12,7 +12,7 @@
+ ///////////////////////////////////////////////////////////////////////////
+ 
+ #include "FDFilter.hh"
+-#include "fSeries/fSeries.hh"
++#include "fSeries/f_series.hh"
+ 
+ #ifndef __CINT__
+ #include "DVector.hh"
