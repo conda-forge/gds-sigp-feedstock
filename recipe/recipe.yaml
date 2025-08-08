@@ -18,6 +18,7 @@ source:
     - rename_fseries.patch
 
 build:
+  skip: win
   number: 1
     #run_exports:
     #  - {{ pin_subpackage('gds-sigp', max_pin='x.x') }}
@@ -39,15 +40,15 @@ requirements:
    - libexpat
    - zlib
 
-     #tests:
-     #  - if: not win
-     #     script:    
-     #      - test -f ${{ PREFIX }}/lib/libgds-sigp${{ SHLIB_EXT }}
-     #      - test -f ${{ PREFIX }}/include/gds-sigp/gdssigproc.h
-     #  - if: win
-     #     script:
-     #      - IF NOT EXIST ${{ PREFIX }}/lib/libgds-sigp${{ SHLIB_EXT }} EXIT /B 1
-     #      - IF NOT EXIST ${{ PREFIX }}/include/gds-sigp/gdssigproc.h EXIT /B 1
+tests:
+  - script:
+     - if: not win
+       then:
+         - test -f ${{ PREFIX }}/lib/libgds-sigp${{ SHLIB_EXT }}
+         - test -f ${{ PREFIX }}/include/gds-sigp/gdssigproc.h
+       else:
+         - IF NOT EXIST ${{ PREFIX }}/lib/libgds-sigp${{ SHLIB_EXT }} EXIT /B 1
+         - IF NOT EXIST ${{ PREFIX }}/include/gds-sigp/gdssigproc.h EXIT /B 1
 
 about:
   homepage: https://git.ligo.org/cds/software/gds_sigp
