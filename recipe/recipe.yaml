@@ -18,7 +18,8 @@ source:
     - rename_fseries.patch
 
 build:
-  number: 2
+  skip: win
+  number: 3
     #run_exports:
     #  - {{ pin_subpackage('gds-sigp', max_pin='x.x') }}
 
