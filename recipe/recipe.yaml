@@ -47,8 +47,8 @@ tests:
          - test -f ${PREFIX}/lib/libgds-sigp${SHLIB_EXT}
          - test -f ${PREFIX}/include/gds-sigp/gdssigproc.h
       else:
-         - IF NOT EXIST %PREFIX%/lib/libgds-sigp%SHLIB_EXT% EXIT /B 1
-         - IF NOT EXIST %PREFIX%/include/gds-sigp/gdssigproc.h EXIT /B 1
+         - IF NOT EXIST %PREFIX%\\Library\\bin\\libgds-sigp%SHLIB_EXT% EXIT /B 1
+         - IF NOT EXIST %PREFIX%\\Library\\include\\gds-sigp\\gdssigproc.h EXIT /B 1
 
 about:
   homepage: https://git.ligo.org/cds/software/gds_sigp
