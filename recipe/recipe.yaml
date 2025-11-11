@@ -4,7 +4,7 @@ schema_version: 1
 
 context:
   name: "gds-sigp"
-  version: "1.0.3"
+  version: "2.0.0"
 
 package:
   name: ${{ name }}
@@ -12,16 +12,10 @@ package:
 
 source:
   url: https://git.ligo.org/cds/software/gds-sigp/-/archive/${{ version }}/${{ version }}.tar.gz
-  sha256: 67935ed82fc9b99acff9df2c0071ab3d69036d593e74b1cd4b471140941b5ad0
-  patches:
-    - has_single_bit.patch
-    - rename_fseries.patch
+  sha256: 70267968a130dc9bebdda7c5ec89931a860227684471b7ceee6f1e7d10c46ba0 
 
 build:
-  skip: win
-  number: 3
-    #run_exports:
-    #  - {{ pin_subpackage('gds-sigp', max_pin='x.x') }}
+  number: 0
 
 requirements:
   build:
@@ -39,6 +33,9 @@ requirements:
    - expat
    - libexpat
    - zlib
+   - if: win
+     then:
+       - pthreads-win32
 
 tests:
   - script:

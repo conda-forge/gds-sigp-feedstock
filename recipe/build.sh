@@ -1,5 +1,5 @@
 #!/bin/sh
-
+set -e -x
 mkdir build
 cd build
 
@@ -8,3 +8,4 @@ cmake ${CMAKE_ARGS} \
       ${SRC_DIR}
 
 cmake --build . -j 8 --config Release --target install
+ctest
