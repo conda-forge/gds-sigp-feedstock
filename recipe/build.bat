@@ -11,3 +11,7 @@ if errorlevel 1 exit 1
 :: Install.
 cmake --build . --config Release --target install
 if errorlevel 1 exit 1
+
+ctest -C Release --output-on-failure
+if errorlevel 1 exit 1
+
