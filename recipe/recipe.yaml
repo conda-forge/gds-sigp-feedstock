@@ -13,6 +13,9 @@ package:
 source:
   url: https://git.ligo.org/cds/software/gds-sigp/-/archive/${{ version }}/${{ version }}.tar.gz
   sha256: 70267968a130dc9bebdda7c5ec89931a860227684471b7ceee6f1e7d10c46ba0 
+  patches:
+    - add_includes.patch
+    - add_dl.patch
 
 build:
   number: 0
