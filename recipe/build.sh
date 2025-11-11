@@ -9,4 +9,8 @@ cmake ${CMAKE_ARGS} \
       ${SRC_DIR}
 
 cmake --build . -j 8 --config Release --target install
-ctest --output-on-failure
+
+if [[ $target_platform == $build_platform ]]
+then
+	ctest --output-on-failure
+fi
